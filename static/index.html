@@ -96,7 +96,6 @@ a.book{display:inline-block;background:var(--accent);color:#fff;text-decoration:
       </div>
       <div class="row">
         <button class="primary" id="scan">Check flights</button>
-        <label class="toggle" title="Re-check tomorrow's flights from this airport every 2 hours while the app is running, to build seat history"><input type="checkbox" id="watch"> Auto-track</label>
       </div>
       <div id="jobbox" style="display:none">
         <div class="progress"><i id="bar"></i></div>
@@ -182,7 +181,6 @@ async function init(){
   renderDays();
   sel.onchange = () => { state.origin = sel.value; try{localStorage.setItem("gw.origin", sel.value);}catch(e){}; state.selected = null; load(); };
   $("#scan").onclick = scan;
-  $("#watch").onchange = async e => { state.meta.watch = await api("/api/watch", {origin: state.origin, on: e.target.checked}); };
   for(const id of ["#nonstop", "#openonly"]) $(id).onchange = render;
   $("#maxp").oninput = render;
   await load();
@@ -202,7 +200,6 @@ function renderDays(){
 }
 
 async function load(){
-  $("#watch").checked = state.meta.watch.origins.includes(state.origin);
   state.results = await api(`/api/results?origin=${state.origin}&day=${state.day}`);
   render();
 }
