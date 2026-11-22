@@ -17,6 +17,7 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 STATIC = os.path.join(ROOT, "static")
 WATCH_PATH = os.path.join(ROOT, "data", "watch.json")
 PORT = int(os.environ.get("GOWILD_PORT", "8777"))
+HOST = os.environ.get("GOWILD_HOST", "127.0.0.1")   # the Docker image sets 0.0.0.0; publish the port on loopback only
 
 with open(os.path.join(ROOT, "data", "airports.json"), encoding="utf-8") as f:
     AIRPORTS = json.load(f)
@@ -38,9 +39,16 @@ def save_watch(w):
     os.replace(WATCH_PATH + ".tmp", WATCH_PATH)
 
 
+def _intl_dests(origin):
+    """International destinations Frontier sells from `origin` (their GoWild window is 10 days)."""
+    m = frontier.get_markets()
+    return [d for d in m["routes"].get(origin, []) if not m["stations"].get(d, {}).get("domestic", True)]
+
+
 def watcher():
-    """Re-scan watched airports for tomorrow (the date domestic GoWild opens for) on an
-    interval, so seat history builds up. Kept to one date per airport to stay polite."""
+    """Re-scan watched airports on an interval, so seat history builds up: tomorrow for every
+    destination (domestic GoWild opens the day before), plus the date 10 days out for the
+    international destinations only (their window opens 10 days ahead)."""
     last, jobs = {}, {}
     while True:
         w = load_watch()
@@ -54,6 +62,14 @@ def watcher():
                 last[o] = time.time()
                 d = date.today() + timedelta(days=1)
                 jobs[o], _ = scanner.start(o, d, label=f"auto {o} {d:%a %b %d}")
+                try:
+                    intl = _intl_dests(o)
+                    if intl:
+                        d10 = date.today() + timedelta(days=rules.INTERNATIONAL_DAYS_AHEAD)
+                        if not rules.is_blackout(d10):
+                            scanner.start(o, d10, intl, f"auto intl {o} {d10:%a %b %d}")
+                except frontier.FrontierError:
+                    pass   # route map unavailable right now; the tomorrow scan above still runs
         time.sleep(60)
 
 
@@ -167,8 +183,8 @@ def main():
     store.init()
     frontier.get_markets()
     threading.Thread(target=watcher, daemon=True).start()
-    srv = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
-    print(f"GoWild tracker on http://localhost:{PORT}  (Ctrl+C to stop)", flush=True)
+    srv = ThreadingHTTPServer((HOST, PORT), Handler)
+    print(f"GoWild tracker on http://{HOST}:{PORT}  (Ctrl+C to stop)", flush=True)
     try:
         srv.serve_forever()
     except KeyboardInterrupt:
