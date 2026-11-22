@@ -47,8 +47,9 @@ def _intl_dests(origin):
 
 def watcher():
     """Re-scan watched airports on an interval, so seat history builds up: tomorrow for every
-    destination (domestic GoWild opens the day before), plus the date 10 days out for the
-    international destinations only (their window opens 10 days ahead)."""
+    destination (domestic GoWild opens the day before), today as well (seats keep opening and
+    selling out on the day itself), plus the date 10 days out for the international destinations
+    only (their window opens 10 days ahead)."""
     last, jobs = {}, {}
     while True:
         w = load_watch()
@@ -60,7 +61,9 @@ def watcher():
                 jobs.pop(o)
             if time.time() - last.get(o, 0) >= every and not scanner.cooldown_left():
                 last[o] = time.time()
-                d = date.today() + timedelta(days=1)
+                t = date.today()
+                scanner.start(o, t, label=f"auto {o} {t:%a %b %d} (today)")
+                d = t + timedelta(days=1)
                 jobs[o], _ = scanner.start(o, d, label=f"auto {o} {d:%a %b %d}")
                 try:
                     intl = _intl_dests(o)

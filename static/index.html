@@ -50,6 +50,7 @@ button.ghost:hover{background:#2a2a2d}
 .list{overflow-y:auto;overflow-x:hidden;flex:1;min-height:0}
 .stat{padding:10px 18px;font-size:13px;color:var(--muted);border-bottom:1px solid var(--line)}
 .stat b{color:var(--ink)}
+.stale{color:var(--amber);font-weight:600}
 .dest{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 10px;padding:10px 18px;border-bottom:1px solid var(--line);cursor:pointer}
 .dest:hover{background:var(--panel2)}
 .dest>*{min-width:0}
@@ -174,6 +175,9 @@ const fmtStamp = iso => {
   return d.toDateString() === now.toDateString() ? t : d.toLocaleDateString([], {month:"short", day:"numeric"}) + " " + t;
 };
 const ago = iso => { const m = Math.round((Date.now() - new Date(iso)) / 60000); return m < 1 ? "just now" : m < 60 ? m + " min ago" : Math.round(m/60) + " h ago"; };
+// data older than half the auto-scan interval (same default/minimum as the server's watcher) counts as stale
+const staleMs = () => Math.max(30, +(state.meta?.watch?.interval_minutes) || 120) * 30000;
+const isStale = iso => Date.now() - new Date(iso) > staleMs();
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 
 const map = L.map("map", {zoomControl:true, worldCopyJump:true}).setView([30, -95], 4);
@@ -276,7 +280,7 @@ function render(){
   const open = sums.filter(s => s.open && s.open.length);
   const last = checked.map(s => s.r.checked_at).sort().pop();
   $("#stat").innerHTML = checked.length
-    ? `<b>${open.length}</b> of ${checked.length} checked destinations have GoWild seats on <b>${fmtDay(state.day)}</b>` + (last ? ` · checked ${ago(last)}` : "")
+    ? `<b>${open.length}</b> of ${checked.length} checked destinations have GoWild seats on <b>${fmtDay(state.day)}</b>` + (last ? ` · checked ${ago(last)}` + (isStale(last) ? ` <span class="stale">· stale, hit Check to refresh</span>` : "") : "")
     : `Nothing checked yet for ${fmtDay(state.day)}. Hit <b>Check</b> to pull live seats from Frontier.`;
 
   // list

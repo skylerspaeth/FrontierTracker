@@ -25,7 +25,7 @@ Needs Python 3.11+ and `pip install -r requirements.txt`.
   GoWild page and live in `rules.py` (posted through April 2027; add new ones there).
 - **Tracking**: every check is saved in `data/gowild.db`. The flight list shows when each
   GoWild seat was first seen open, the price range seen, and seats that have since closed.
-  Turn on **Auto-track** for an airport to re-check tomorrow's flights every 2 hours while
+  Turn on **Auto-track** for an airport to re-check today's and tomorrow's flights every 2 hours while
   the app runs.
 - **Return trips**: open a destination and pick a return date; it checks that single route.
 
