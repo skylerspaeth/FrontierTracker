@@ -256,7 +256,8 @@ async function load(){
 
 function destSummary(code){
   const r = state.results.results[code];
-  if(!r) return {code, checked:false};
+  // a route Frontier's calendar says doesn't fly that day isn't "checked", whatever an old scan stored
+  if(!r || state.results.skipped[code]) return {code, checked:false};
   const nonstopOnly = $("#nonstop").checked;
   const maxp = parseFloat($("#maxp").value);
   let open = r.flights.filter(f => f.gowild);
@@ -275,19 +276,24 @@ function render(){
   // date note
   let note = "";
   if(state.meta.peak_reliable === false) note += `<div class="warn">Couldn't read Frontier's peak-day list, so peak days shown come from a built-in copy and may be out of date.</div>`;
-  if(res.peak) note += `<div class="warn">${fmtDay(state.day)} is ${state.meta.peak_reliable === false ? "possibly" : ""} a peak day. GoWild seats can still be booked, but Frontier may add a peak-day charge.</div>`;
+  if(res.peak) note += `<div class="warn">${fmtDay(state.day)} is ${state.meta.peak_reliable === false ? "possibly" : ""} a peak day. GoWild seats can still be booked, but Frontier adds a peak-day charge, which is already included in the prices shown.</div>`;
   if(dayInfo && !dayInfo.domestic_open) note += `<div class="note">Domestic GoWild normally opens the day before departure. Domestic fares shown for ${fmtDay(state.day)} are <b>early-booking</b> fares, which carry an extra charge, so they cost more than usual. International routes are inside their normal 10-day window.</div>`;
   $("#daynote").innerHTML = note;
-  const toCheck = res.routes.length - Object.keys(res.skipped).length;
+  // routes Frontier no longer flies at all (empty calendar) aren't destinations: leave them out
+  const unserved = new Set(res.unserved || []);
+  const routes = res.routes.filter(c => !unserved.has(c));
+  const toCheck = routes.length - Object.keys(res.skipped).filter(c => !unserved.has(c)).length;
   $("#scan").textContent = `Check ${toCheck} route${toCheck === 1 ? "" : "s"} from ${state.origin}`;
 
-  const sums = res.routes.map(destSummary);
+  const sums = routes.map(destSummary);
   const checked = sums.filter(s => s.checked);
   const open = sums.filter(s => s.open && s.open.length);
   const last = checked.map(s => s.r.checked_at).sort().pop();
+  const notFlown = Object.keys(res.skipped).filter(c => !unserved.has(c)).length;
+  const notFlownNote = notFlown ? ` ${notFlown} route${notFlown === 1 ? " doesn't" : "s don't"} fly that day (untick "GoWild only" to see which).` : "";
   $("#stat").innerHTML = checked.length
-    ? `<b>${open.length}</b> of ${checked.length} checked destinations have GoWild seats on <b>${fmtDay(state.day)}</b>` + (last ? ` · checked ${ago(last)}` + (isStale(last) ? ` <span class="stale">· stale, hit Check to refresh</span>` : "") : "")
-    : `Nothing checked yet for ${fmtDay(state.day)}. Hit <b>Check</b> to pull live seats from Frontier.`;
+    ? `<b>${open.length}</b> of ${checked.length} checked destinations have GoWild seats on <b>${fmtDay(state.day)}</b>` + (last ? ` · checked ${ago(last)}` + (isStale(last) ? ` <span class="stale">· stale, hit Check to refresh</span>` : "") : "") + (notFlown ? ` · ${notFlown} not flying` : "")
+    : `Nothing checked yet for ${fmtDay(state.day)}. Hit <b>Check</b> to pull live seats from Frontier.` + notFlownNote;
 
   // list
   const showAll = !$("#openonly").checked;

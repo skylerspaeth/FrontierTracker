@@ -194,6 +194,21 @@ def get_schedule(origin, dest, fetch=True):
     return disabled, last
 
 
+NO_SERVICE = "no scheduled service"     # Frontier's calendar has no flying dates left for the route
+
+
+def refresh_schedules(origin):
+    """Read (or refresh, when over SCHEDULE_MAX_AGE_DAYS old) the booking calendar of every route
+    from `origin`. Stops quietly if Frontier starts refusing requests. Paced like any other request,
+    so a full airport (~80 routes) takes about ten minutes, and only when the cache is stale."""
+    for dest in get_markets()["routes"].get(origin, []):
+        try:
+            get_schedule(origin, dest)
+        except FrontierError as e:
+            if e.blocked:
+                return
+
+
 def schedule_gap(origin, dest, d, fetch=True):
     """None if Frontier's calendar shows service on date d (or we can't tell); otherwise a short
     reason, e.g. "no service until Mar 4" for a seasonal route. Frontier's route list names pairs
@@ -206,7 +221,7 @@ def schedule_gap(origin, dest, d, fetch=True):
         return None
     disabled, last = sched
     if last is None:
-        return "no scheduled service"
+        return NO_SERVICE
     if d <= last and d not in disabled:
         return None
     n = d + timedelta(days=1)
@@ -214,7 +229,7 @@ def schedule_gap(origin, dest, d, fetch=True):
         if n not in disabled:
             return f"no service until {n:%b} {n.day}"
         n += timedelta(days=1)
-    return "no scheduled service"
+    return NO_SERVICE
 
 
 # ---------------------------------------------------------------- flights

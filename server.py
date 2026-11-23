@@ -62,6 +62,10 @@ def watcher():
                 jobs.pop(o)
             if time.time() - last.get(o, 0) >= every and not scanner.cooldown_left():
                 last[o] = time.time()
+                try:
+                    frontier.refresh_schedules(o)   # Frontier's own calendar is our "is this route really flown" source
+                except (frontier.FrontierError, OSError):
+                    pass
                 t = date.today()
                 scanner.start(o, t, label=f"auto {o} {t:%a %b %d} (today)")
                 d = t + timedelta(days=1)
@@ -73,7 +77,7 @@ def watcher():
                         # skipping routes Frontier's calendar says don't fly that day (seasonal routes).
                         for n in range(2, rules.INTERNATIONAL_DAYS_AHEAD + 1):
                             di = t + timedelta(days=n)
-                            dests = [x for x in intl if not frontier.schedule_gap(o, x, di)]
+                            dests = [x for x in intl if not frontier.schedule_gap(o, x, di, fetch=False)]
                             if dests:
                                 scanner.start(o, di, dests, f"auto intl {o} {di:%a %b %d}")
                 except frontier.FrontierError:
@@ -110,6 +114,7 @@ def results(origin, day):
     m = frontier.get_markets()
     _, skipped = scanner.plan(origin, d, fetch=False)
     return {"origin": origin, "day": day, "routes": m["routes"].get(origin, []),
+            "unserved": [c for c, why in skipped.items() if why == frontier.NO_SERVICE],
             "results": store.latest(origin, day), "skipped": skipped,
             "peak": rules.is_peak(d)}
 

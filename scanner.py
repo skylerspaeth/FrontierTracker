@@ -23,16 +23,11 @@ _queue_lock = threading.Lock()   # serializes jobs
 _cooldown_until = 0.0
 
 
-def is_domestic_route(stations, a, b):
-    return stations.get(a, {}).get("domestic", False) and stations.get(b, {}).get("domestic", False)
-
-
 def plan(origin, day, dests=None, fetch=True):
     """Which destinations to check for this origin/date, and why others are skipped.
-    Full-origin plans (dests=None) skip international routes Frontier's calendar says don't fly
-    that day. `fetch=False` only uses calendars we already have (for cheap status lookups)."""
-    m = frontier.get_markets()
-    stations, routes = m["stations"], m["routes"]
+    Full-origin plans (dests=None) skip routes Frontier's booking calendar says don't fly that day
+    (seasonal or discontinued). `fetch=False` only uses calendars we already have."""
+    routes = frontier.get_markets()["routes"]
     all_dests = dests or routes.get(origin, [])
     ahead = (day - date.today()).days
     todo, skipped = [], {}
@@ -44,7 +39,7 @@ def plan(origin, day, dests=None, fetch=True):
             continue
         # No skipping for dates outside the standard window (domestic: day before; international:
         # 10 days): Frontier shows "early booking" GoWild fares there for an extra charge.
-        if not dests and not is_domestic_route(stations, origin, d):
+        if not dests:
             gap = frontier.schedule_gap(origin, d, day, fetch)
             if gap:
                 skipped[d] = gap

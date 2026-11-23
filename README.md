@@ -27,10 +27,12 @@ Needs Python 3.11+ and `pip install -r requirements.txt`.
   **peak days** (Frontier may add a peak-day charge; seats are still bookable). The picker marks
   them, and `peakdays.py` re-reads the list from Frontier's GoWild page once a day (a copy is
   built in as a fallback).
-- **Seasonal routes**: Frontier's route list includes pairs that only fly part of the year
-  (Austin's international routes mostly start in March). The tracker reads Frontier's booking
-  calendar for international routes (a few requests every 3 days, cached) and the list shows
-  "no service until Mar 4" instead of scanning dates with no flights.
+- **Which routes are real**: Frontier's route list (`GetMarkets`) names every pair it has ever
+  loaded, far more than it flies. The source of truth here is Frontier's own booking calendar for
+  each route (the greyed-out dates when you pick a date on flyfrontier.com). The background tracker
+  reads those calendars for every route from a watched airport (about 80 requests every 3 days,
+  paced) and the app uses them to skip routes that don't fly a given date ("no service until
+  Mar 4") and to hide routes with no flying dates left at all.
 - **Tracking**: every check is saved in `data/gowild.db`. The flight list shows when each
   GoWild seat was first seen open, the price range seen, and seats that have since closed.
   Turn on **Auto-track** for an airport to re-check today's and tomorrow's flights every 2 hours while
