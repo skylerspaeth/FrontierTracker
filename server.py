@@ -9,6 +9,7 @@ from datetime import date, datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import frontier
+import notify
 import peakdays
 import rules
 import scanner
@@ -67,9 +68,10 @@ def watcher():
                 except (frontier.FrontierError, OSError):
                     pass
                 t = date.today()
-                scanner.start(o, t, label=f"auto {o} {t:%a %b %d} (today)")
+                cycle = [scanner.start(o, t, label=f"auto {o} {t:%a %b %d} (today)", notify=True)[0]]
                 d = t + timedelta(days=1)
-                jobs[o], _ = scanner.start(o, d, label=f"auto {o} {d:%a %b %d}")
+                jobs[o], _ = scanner.start(o, d, label=f"auto {o} {d:%a %b %d}", notify=True)
+                cycle.append(jobs[o])
                 try:
                     intl = _intl_dests(o)
                     if intl:
@@ -79,9 +81,10 @@ def watcher():
                             di = t + timedelta(days=n)
                             dests = [x for x in intl if not frontier.schedule_gap(o, x, di, fetch=False)]
                             if dests:
-                                scanner.start(o, di, dests, f"auto intl {o} {di:%a %b %d}")
+                                cycle.append(scanner.start(o, di, dests, f"auto intl {o} {di:%a %b %d}", notify=True)[0])
                 except frontier.FrontierError:
                     pass   # route map unavailable right now; the tomorrow scan above still runs
+                notify.flush_when_done(o, cycle)   # one Telegram digest once this cycle's scans finish
         time.sleep(60)
 
 

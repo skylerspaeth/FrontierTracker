@@ -4,7 +4,7 @@ import json
 import os
 import sqlite3
 import threading
-from datetime import datetime
+from datetime import datetime, timedelta
 
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "gowild.db")
 _lock = threading.Lock()
@@ -31,6 +31,14 @@ CREATE TABLE IF NOT EXISTS flights (
 );
 CREATE INDEX IF NOT EXISTS flights_check ON flights(check_id);
 CREATE INDEX IF NOT EXISTS flights_track ON flights(origin, dest, day, key, checked_at);
+CREATE TABLE IF NOT EXISTS alerts (   -- flights we've sent (or silently baselined) a deal alert for
+  origin TEXT NOT NULL, dest TEXT NOT NULL, day TEXT NOT NULL, key TEXT NOT NULL,
+  last_price REAL,                    -- price at the last alert; a later drop is measured against it
+  open INTEGER NOT NULL DEFAULT 1,    -- 0 once a check no longer shows the seat open (so a return re-alerts)
+  alerted_at TEXT,
+  PRIMARY KEY (origin, dest, day, key)
+);
+CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT);
 """
 
 
@@ -69,6 +77,53 @@ def record(origin, dest, day, status, result=None, error=None):
               f["gowild_seats_text"], f["standard_price"], f["discount_den_price"], json.dumps(f))
              for f in flights])
     return cid
+
+
+def nonstop_dests(origin, days=30):
+    """Destinations that had a nonstop flight (a single-segment key, no '+') in the last `days` days,
+    whether or not GoWild was open on it. Derived from our own data so there's no list to maintain."""
+    cutoff = (datetime.now().astimezone() - timedelta(days=days)).isoformat(timespec="seconds")
+    with _conn() as c:
+        return {r["dest"] for r in c.execute(
+            "SELECT DISTINCT dest FROM flights WHERE origin=? AND checked_at>=? AND key NOT LIKE '%+%'",
+            (origin, cutoff))}
+
+
+def alerts_for(origin, dest, day):
+    """{flight key: {'last_price', 'open'}} for flights we've alerted (or baselined) on this route/date."""
+    with _conn() as c:
+        return {r["key"]: {"last_price": r["last_price"], "open": bool(r["open"])} for r in c.execute(
+            "SELECT key, last_price, open FROM alerts WHERE origin=? AND dest=? AND day=?", (origin, dest, day))}
+
+
+def alerts_set(origin, dest, day, key, price):
+    """Record that we alerted on this flight at `price` (it is open now)."""
+    with _lock, _conn() as c:
+        c.execute(
+            "INSERT INTO alerts(origin,dest,day,key,last_price,open,alerted_at) VALUES (?,?,?,?,?,1,?)"
+            " ON CONFLICT(origin,dest,day,key) DO UPDATE SET last_price=excluded.last_price, open=1,"
+            " alerted_at=excluded.alerted_at", (origin, dest, day, key, price, now_iso()))
+
+
+def alerts_close_missing(origin, dest, day, open_keys):
+    """Mark alerted flights that are no longer open in the latest check as closed."""
+    with _lock, _conn() as c:
+        rows = c.execute("SELECT key FROM alerts WHERE origin=? AND dest=? AND day=? AND open=1",
+                         (origin, dest, day)).fetchall()
+        gone = [r["key"] for r in rows if r["key"] not in set(open_keys)]
+        c.executemany("UPDATE alerts SET open=0 WHERE origin=? AND dest=? AND day=? AND key=?",
+                      [(origin, dest, day, k) for k in gone])
+
+
+def meta_get(k, default=None):
+    with _conn() as c:
+        r = c.execute("SELECT v FROM meta WHERE k=?", (k,)).fetchone()
+        return r["v"] if r else default
+
+
+def meta_set(k, v):
+    with _lock, _conn() as c:
+        c.execute("INSERT INTO meta(k,v) VALUES (?,?) ON CONFLICT(k) DO UPDATE SET v=excluded.v", (k, str(v)))
 
 
 def latest(origin, day):

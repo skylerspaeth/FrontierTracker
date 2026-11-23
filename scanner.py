@@ -6,11 +6,13 @@ blocks bursts. If Frontier refuses us even once, the job stops and a 30-minute c
 kicks in instead of retrying harder.
 """
 import itertools
+import sys
 import threading
 import time
 from datetime import date
 
 import frontier
+import notify
 import store
 
 BLOCK_LIMIT = 1            # blocked responses before we stop
@@ -49,8 +51,9 @@ def plan(origin, day, dests=None, fetch=True):
 
 
 class Job:
-    def __init__(self, origin, day, dests, label):
+    def __init__(self, origin, day, dests, label, notify=False):
         self.id = next(_ids)
+        self.notify = notify          # watcher jobs may send Telegram deal alerts; manual checks never do
         self.origin, self.day, self.dests, self.label = origin, day, dests, label
         self.total = len(dests)
         self.done = 0
@@ -81,6 +84,10 @@ def _check(job, dest, blocked_streak):
             if any(f["gowild"] for f in res["flights"]):
                 job.found += 1
         blocked_streak[0] = 0
+        try:
+            notify.on_check(job, d, res)
+        except Exception as e:      # alerts must never break scanning
+            print(f"notify failed for {o}-{d}: {e}", file=sys.stderr, flush=True)
     except frontier.FrontierError as e:
         job.errors += 1
         store.record(o, d, day.isoformat(), "error", error=str(e))
@@ -113,14 +120,15 @@ def _run(job):
         job.finished = time.time()
 
 
-def start(origin, day, dests=None, label=""):
+def start(origin, day, dests=None, label="", notify=False):
     origin = origin.upper()
     with _jobs_lock:
         for j in _jobs.values():  # same scan already queued/running: reuse it
             if j.origin == origin and j.day == day and j.state in ("queued", "running") and not dests:
+                j.notify = j.notify or notify
                 return j, {}
     todo, skipped = plan(origin, day, dests, fetch=False)   # never block a request on calendar fetches
-    job = Job(origin, day, todo, label or f"{origin} {day:%a %b %d}")
+    job = Job(origin, day, todo, label or f"{origin} {day:%a %b %d}", notify)
     with _jobs_lock:
         _jobs[job.id] = job
     threading.Thread(target=_run, args=(job,), daemon=True).start()

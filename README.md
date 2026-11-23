@@ -39,6 +39,37 @@ Needs Python 3.11+ and `pip install -r requirements.txt`.
   the app runs.
 - **Return trips**: open a destination and pick a return date; it checks that single route.
 
+## Telegram deal alerts
+
+The background tracker can message you when a new deal shows up. It sends one digest per scan
+cycle (nothing if there's nothing new), grouped by rule:
+
+- **Under $50** to any destination the origin has no nonstop flight to (nonstop destinations are
+  always cheap, so they'd flood the chat; the list comes from your own scan history)
+- **International under $100**, or **Puerto Rico under $85**
+
+A flight alerts when it is new, when its price drops $10 or more below what you were last told,
+or when a seat that sold out reopens. The first watch interval after you switch alerts on is a
+silent baseline, so what's already open when you start doesn't produce a flood. Manual "Check"
+clicks never send alerts; only the background tracker does.
+
+Setup:
+
+1. In Telegram, message **@BotFather**, send `/newbot`, and copy the bot token.
+2. Send your new bot any message, then open
+   `https://api.telegram.org/bot<TOKEN>/getUpdates` and copy `message.chat.id`.
+3. Give the app two environment variables (never commit them): `TELEGRAM_BOT_TOKEN` and
+   `TELEGRAM_CHAT_ID`. Without them alerts are off.
+4. Check it with `python notify.py --test` (sends a sample digest).
+
+The rules can be changed in `data/watch.json` without a redeploy (all optional, defaults shown):
+
+```json
+"notify": {"under": 50, "international": 100, "puerto_rico": 85, "drop": 10}
+```
+
+`python -m unittest discover -s tests` runs the tests for this (no network needed).
+
 ## Rate limits
 
 Frontier's site is behind DataDome bot protection. Bursts of requests get the IP blocked
@@ -51,6 +82,8 @@ If Frontier refuses a request, the scan stops and waits 30 minutes before allowi
 - `frontier.py` reads Frontier's site
 - `scanner.py` runs scans, pacing and block handling
 - `store.py` SQLite history
+- `notify.py` Telegram deal alerts
+- `tests/` unit tests (alert rules, dedupe, message formatting)
 - `rules.py` GoWild windows
 - `peakdays.py` peak-day dates, scraped from Frontier's GoWild page
 - `server.py` local web server and API
