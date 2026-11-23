@@ -4,5 +4,6 @@ data/gowild.db*
 data/cookies.json
 data/watch.json
 data/markets.json
+data/peak_days.json
 data/schedules.json
 probe_then_scan.py

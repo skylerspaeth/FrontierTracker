@@ -21,8 +21,16 @@ Needs Python 3.11+ and `pip install -r requirements.txt`.
 - **Price shown** is Frontier's own GoWild price for that itinerary: the $0.01 fare plus taxes
   and fees (about $15.41 nonstop domestic, more with connections, $85+ international).
 - **Windows**: domestic GoWild opens the day before departure; international 10 days before.
-  The date picker marks which dates are bookable. Blackout dates come from Frontier's
-  GoWild page and live in `rules.py` (posted through April 2027; add new ones there).
+  Dates later than that show **early-booking** fares
+  (Frontier sells some flights ahead of the window for an extra charge), so you can check any
+  date up to 10 days out; the picker labels them "early booking". There are no blackout dates any more, only
+  **peak days** (Frontier may add a peak-day charge; seats are still bookable). The picker marks
+  them, and `peakdays.py` re-reads the list from Frontier's GoWild page once a day (a copy is
+  built in as a fallback).
+- **Seasonal routes**: Frontier's route list includes pairs that only fly part of the year
+  (Austin's international routes mostly start in March). The tracker reads Frontier's booking
+  calendar for international routes (a few requests every 3 days, cached) and the list shows
+  "no service until Mar 4" instead of scanning dates with no flights.
 - **Tracking**: every check is saved in `data/gowild.db`. The flight list shows when each
   GoWild seat was first seen open, the price range seen, and seats that have since closed.
   Turn on **Auto-track** for an airport to re-check today's and tomorrow's flights every 2 hours while
@@ -41,7 +49,8 @@ If Frontier refuses a request, the scan stops and waits 30 minutes before allowi
 - `frontier.py` reads Frontier's site
 - `scanner.py` runs scans, pacing and block handling
 - `store.py` SQLite history
-- `rules.py` GoWild windows and blackout dates
+- `rules.py` GoWild windows
+- `peakdays.py` peak-day dates, scraped from Frontier's GoWild page
 - `server.py` local web server and API
 - `static/index.html` the map UI
 - `data/airports.json` airport coordinates (OurAirports)

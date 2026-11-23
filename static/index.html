@@ -24,7 +24,7 @@ h1{font-size:18px;margin:0 0 2px;letter-spacing:-.01em}
 .sub{color:var(--muted);font-size:12px}
 .controls{padding:12px 18px;border-bottom:1px solid var(--line);display:grid;grid-template-columns:minmax(0,1fr);gap:10px;flex:none;max-height:60%;overflow-y:auto}
 .controls>*{min-width:0}
-label.small{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:600}
+label.small{display:block;margin-bottom:6px;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:600}
 select,input[type=text]{width:100%;max-width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font:inherit;background:var(--panel2);color:var(--ink)}
 select:focus,input[type=text]:focus,button:focus-visible{outline:2px solid var(--green);outline-offset:1px}
 input::placeholder{color:var(--gray)}
@@ -33,7 +33,8 @@ input::placeholder{color:var(--gray)}
 .day b{display:block;font-size:13px}
 .day span{font-size:11px;color:var(--muted)}
 .day.on{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent);background:var(--green-soft)}
-.day.blackout{opacity:.6}
+.day .pk{font-style:normal;font-weight:600;color:var(--amber)}
+.day.peak{border-color:rgba(251,191,36,.45)}
 .row{display:flex;gap:8px;align-items:center;min-width:0}
 button.primary{flex:1;min-width:0;background:var(--btn);color:#fff;border:0;border-radius:8px;padding:9px 12px;font:inherit;font-weight:600;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 button.primary:hover:not(:disabled){background:var(--btn-hover)}
@@ -63,12 +64,13 @@ button.ghost:hover{background:#2a2a2d}
 .badge.non{background:var(--green-soft);color:var(--green)}
 .dest.none .name,.dest.none .price{color:var(--gray);font-weight:500}
 .detail{padding:14px 18px;display:none}
-.detail h2{margin:4px 0 2px;font-size:17px;overflow-wrap:anywhere}
+.detail h2{margin:16px 0 4px;font-size:17px;overflow-wrap:anywhere}
 .tablewrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
 table{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}
-th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:600;padding:6px 4px;border-bottom:1px solid var(--line)}
-td{padding:7px 4px;border-bottom:1px solid var(--line);vertical-align:top}
+th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:600;padding:6px 6px;border-bottom:1px solid var(--line)}
+td{padding:7px 6px;border-bottom:1px solid var(--line);vertical-align:top}
 th.num,td.num{text-align:right;font-variant-numeric:tabular-nums}
+td.num .badge{display:inline-block;margin:2px 0 0;padding:2px 8px;white-space:nowrap;text-align:center;line-height:1.3}
 tr.closed td{color:var(--gray)}
 .track{font-size:11px;color:var(--muted)}
 a{color:var(--green)}
@@ -178,6 +180,8 @@ const ago = iso => { const m = Math.round((Date.now() - new Date(iso)) / 60000);
 // data older than half the auto-scan interval (same default/minimum as the server's watcher) counts as stale
 const staleMs = () => Math.max(30, +(state.meta?.watch?.interval_minutes) || 120) * 30000;
 const isStale = iso => Date.now() - new Date(iso) > staleMs();
+// "peak day" when the date came from Frontier's own list; "possible peak day" when we only have a built-in/old copy
+const peakWord = () => state.meta?.peak_reliable === false ? "possible peak day" : "peak day";
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 
 const map = L.map("map", {zoomControl:true, worldCopyJump:true}).setView([30, -95], 4);
@@ -236,9 +240,10 @@ function renderDays(){
   const box = $("#days"); box.innerHTML = "";
   for(const d of state.meta.days){
     const b = document.createElement("button");
-    b.className = "day" + (d.date === state.day ? " on" : "") + (d.blackout ? " blackout" : "");
-    const tag = d.blackout ? "blackout" : d.domestic_open ? (d.ahead === 0 ? "today" : "tomorrow") : "intl only";
-    b.innerHTML = `<b>${fmtDay(d.date)}</b><span>${tag}</span>`;
+    b.className = "day" + (d.date === state.day ? " on" : "") + (d.peak ? " peak" : "");
+    const tag = d.domestic_open ? (d.ahead === 0 ? "today" : "tomorrow") : "early booking";
+    b.title = d.domestic_open ? "" : "Outside the normal domestic window (the day before departure): domestic GoWild fares here are early-booking fares, which cost extra. International routes are inside their normal 10-day window.";
+    b.innerHTML = `<b>${fmtDay(d.date)}</b><span>${tag}${d.peak ? ` · <em class="pk">${peakWord()}</em>` : ""}</span>`;
     b.onclick = () => { state.day = d.date; state.selected = null; renderDays(); load(); };
     box.appendChild(b);
   }
@@ -269,8 +274,9 @@ function render(){
   const dayInfo = state.meta.days.find(d => d.date === state.day);
   // date note
   let note = "";
-  if(res.blackout) note = `<div class="warn">${fmtDay(state.day)} is a GoWild blackout date. Frontier won't sell pass seats.</div>`;
-  else if(dayInfo && !dayInfo.domestic_open) note = `<div class="note">Domestic GoWild opens the day before departure, so only international routes are bookable for ${fmtDay(state.day)}. ${Object.keys(res.skipped).length} domestic routes not checked.</div>`;
+  if(state.meta.peak_reliable === false) note += `<div class="warn">Couldn't read Frontier's peak-day list, so peak days shown come from a built-in copy and may be out of date.</div>`;
+  if(res.peak) note += `<div class="warn">${fmtDay(state.day)} is ${state.meta.peak_reliable === false ? "possibly" : ""} a peak day. GoWild seats can still be booked, but Frontier may add a peak-day charge.</div>`;
+  if(dayInfo && !dayInfo.domestic_open) note += `<div class="note">Domestic GoWild normally opens the day before departure. Domestic fares shown for ${fmtDay(state.day)} are <b>early-booking</b> fares, which carry an extra charge, so they cost more than usual. International routes are inside their normal 10-day window.</div>`;
   $("#daynote").innerHTML = note;
   const toCheck = res.routes.length - Object.keys(res.skipped).length;
   $("#scan").textContent = `Check ${toCheck} route${toCheck === 1 ? "" : "s"} from ${state.origin}`;
@@ -295,7 +301,7 @@ function render(){
     div.className = "dest" + (isOpen ? "" : " none");
     let meta, price;
     if(!s.checked){ meta = res.skipped[s.code] ? res.skipped[s.code] : "not checked yet"; price = ""; }
-    else if(s.status === "no_service"){ meta = "no Frontier flights this day"; price = "—"; }
+    else if(s.status === "no_service"){ meta = res.skipped[s.code] || "no Frontier flights this day"; price = "—"; }
     else if(s.status === "error"){ meta = "couldn't read Frontier: " + esc(s.error?.error || ""); price = "?"; }
     else if(isOpen){
       meta = `${s.open.length} GoWild flight${s.open.length>1?"s":""}` + (s.hasNonstop ? `<span class="badge non">nonstop</span>` : "") +

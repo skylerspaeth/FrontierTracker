@@ -11,7 +11,6 @@ import time
 from datetime import date
 
 import frontier
-import rules
 import store
 
 BLOCK_LIMIT = 1            # blocked responses before we stop
@@ -28,8 +27,10 @@ def is_domestic_route(stations, a, b):
     return stations.get(a, {}).get("domestic", False) and stations.get(b, {}).get("domestic", False)
 
 
-def plan(origin, day, dests=None):
-    """Which destinations to check for this origin/date, and why others are skipped."""
+def plan(origin, day, dests=None, fetch=True):
+    """Which destinations to check for this origin/date, and why others are skipped.
+    Full-origin plans (dests=None) skip international routes Frontier's calendar says don't fly
+    that day. `fetch=False` only uses calendars we already have (for cheap status lookups)."""
     m = frontier.get_markets()
     stations, routes = m["stations"], m["routes"]
     all_dests = dests or routes.get(origin, [])
@@ -38,10 +39,16 @@ def plan(origin, day, dests=None):
     for d in all_dests:
         if d == origin:
             continue
-        dom = is_domestic_route(stations, origin, d)
-        if not rules.bookable_now(day, dom) and not dests:
-            skipped[d] = "domestic opens the day before" if dom and ahead > 1 else "outside window"
+        if ahead < 0 and not dests:
+            skipped[d] = "date has passed"
             continue
+        # No skipping for dates outside the standard window (domestic: day before; international:
+        # 10 days): Frontier shows "early booking" GoWild fares there for an extra charge.
+        if not dests and not is_domestic_route(stations, origin, d):
+            gap = frontier.schedule_gap(origin, d, day, fetch)
+            if gap:
+                skipped[d] = gap
+                continue
         todo.append(d)
     return todo, skipped
 
@@ -117,7 +124,7 @@ def start(origin, day, dests=None, label=""):
         for j in _jobs.values():  # same scan already queued/running: reuse it
             if j.origin == origin and j.day == day and j.state in ("queued", "running") and not dests:
                 return j, {}
-    todo, skipped = plan(origin, day, dests)
+    todo, skipped = plan(origin, day, dests, fetch=False)   # never block a request on calendar fetches
     job = Job(origin, day, todo, label or f"{origin} {day:%a %b %d}")
     with _jobs_lock:
         _jobs[job.id] = job

@@ -156,14 +156,17 @@ def _load_schedules():
 _schedules = _load_schedules()
 
 
-def get_schedule(origin, dest):
+def get_schedule(origin, dest, fetch=True):
     """Route calendar from Frontier, kept on disk for a few days (it barely changes).
-    Returns (disabled_dates:set[date], last_date:date|None)."""
+    Returns (disabled_dates:set[date], last_date:date|None), or None when `fetch` is False and
+    nothing is cached yet. With fetch=False a stale cached copy is used rather than refreshed."""
     key = f"{origin}-{dest}"
     with _sched_lock:
         hit = _schedules.get(key)
     fresh_after = (date.today() - timedelta(days=SCHEDULE_MAX_AGE_DAYS)).isoformat()
-    if not hit or hit["fetched"] < fresh_after:
+    if not hit and not fetch:
+        return None
+    if fetch and (not hit or hit["fetched"] < fresh_after):
         q = urllib.parse.urlencode({"calendarSelectableDays.Origin": origin,
                                     "calendarSelectableDays.Destination": dest})
         _, body = _get(f"{BASE}/Flight/RetrieveSchedule?{q}", timeout=20)
@@ -191,11 +194,27 @@ def get_schedule(origin, dest):
     return disabled, last
 
 
-def route_operates(origin, dest, d):
-    disabled, last = get_schedule(origin, dest)
+def schedule_gap(origin, dest, d, fetch=True):
+    """None if Frontier's calendar shows service on date d (or we can't tell); otherwise a short
+    reason, e.g. "no service until Mar 4" for a seasonal route. Frontier's route list names pairs
+    that only fly part of the year, and its booking calendar greys out the other dates."""
+    try:
+        sched = get_schedule(origin, dest, fetch)
+    except FrontierError:
+        return None
+    if sched is None:
+        return None
+    disabled, last = sched
     if last is None:
-        return False
-    return d <= last and d not in disabled
+        return "no scheduled service"
+    if d <= last and d not in disabled:
+        return None
+    n = d + timedelta(days=1)
+    while n <= last:
+        if n not in disabled:
+            return f"no service until {n:%b} {n.day}"
+        n += timedelta(days=1)
+    return "no scheduled service"
 
 
 # ---------------------------------------------------------------- flights

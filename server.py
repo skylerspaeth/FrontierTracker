@@ -9,6 +9,7 @@ from datetime import date, datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import frontier
+import peakdays
 import rules
 import scanner
 import store
@@ -48,8 +49,8 @@ def _intl_dests(origin):
 def watcher():
     """Re-scan watched airports on an interval, so seat history builds up: tomorrow for every
     destination (domestic GoWild opens the day before), today as well (seats keep opening and
-    selling out on the day itself), plus the date 10 days out for the international destinations
-    only (their window opens 10 days ahead)."""
+    selling out on the day itself), plus every date through 10 days out for the international
+    destinations only (their window opens 10 days ahead)."""
     last, jobs = {}, {}
     while True:
         w = load_watch()
@@ -68,9 +69,13 @@ def watcher():
                 try:
                     intl = _intl_dests(o)
                     if intl:
-                        d10 = date.today() + timedelta(days=rules.INTERNATIONAL_DAYS_AHEAD)
-                        if not rules.is_blackout(d10):
-                            scanner.start(o, d10, intl, f"auto intl {o} {d10:%a %b %d}")
+                        # Days 0-1 are covered by the full scans above. Cover the rest of the window,
+                        # skipping routes Frontier's calendar says don't fly that day (seasonal routes).
+                        for n in range(2, rules.INTERNATIONAL_DAYS_AHEAD + 1):
+                            di = t + timedelta(days=n)
+                            dests = [x for x in intl if not frontier.schedule_gap(o, x, di)]
+                            if dests:
+                                scanner.start(o, di, dests, f"auto intl {o} {di:%a %b %d}")
                 except frontier.FrontierError:
                     pass   # route map unavailable right now; the tomorrow scan above still runs
         time.sleep(60)
@@ -89,23 +94,24 @@ def meta():
                          "routes": m["routes"].get(code, [])})
     today = date.today()
     days = []
+    peaks = peakdays.get()
     for d in rules.scan_dates(today):
         days.append({"date": d.isoformat(), "ahead": (d - today).days,
-                     "blackout": rules.is_blackout(d),
-                     "domestic_open": rules.bookable_now(d, True, today),
+                     "peak": d in peaks,
+                     "domestic_open": rules.bookable_now(d, True, today),   # standard window; later dates are early-booking
                      "international_open": rules.bookable_now(d, False, today)})
     return {"stations": sorted(stations, key=lambda s: s["label"]), "days": days,
             "markets_fetched_at": m["fetched_at"], "watch": load_watch(),
-            "blackouts_posted_through": rules.BLACKOUTS_POSTED_THROUGH.isoformat()}
+            "peak_days_fetched_at": peakdays.fetched_at(), "peak_reliable": peakdays.reliable()}
 
 
 def results(origin, day):
     d = datetime.strptime(day, "%Y-%m-%d").date()
     m = frontier.get_markets()
-    _, skipped = scanner.plan(origin, d)
+    _, skipped = scanner.plan(origin, d, fetch=False)
     return {"origin": origin, "day": day, "routes": m["routes"].get(origin, []),
             "results": store.latest(origin, day), "skipped": skipped,
-            "blackout": rules.is_blackout(d)}
+            "peak": rules.is_peak(d)}
 
 
 class Handler(BaseHTTPRequestHandler):
