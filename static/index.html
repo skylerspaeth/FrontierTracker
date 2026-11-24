@@ -59,6 +59,7 @@ button.ghost:hover{background:#2a2a2d}
 .list{overflow-y:auto;overflow-x:hidden;flex:1;min-height:0}
 .stat{padding:10px 18px;font-size:13px;color:var(--muted);border-bottom:1px solid var(--line)}
 .stat b{color:var(--ink)}
+.stat .sub{margin-top:4px}
 .stale{color:var(--amber);font-weight:600}
 .foot{padding:14px 18px 18px;text-align:center;font-size:10.5px;color:var(--gray)}
 .dest{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 10px;padding:10px 18px;border-bottom:1px solid var(--line);cursor:pointer}
@@ -276,7 +277,7 @@ function destSummary(code){
   if(!isNaN(maxp)) open = open.filter(f => f.gowild_price <= maxp);
   const min = open.length ? Math.min(...open.map(f => f.gowild_price)) : null;
   const seats = open.map(f => f.gowild_seats).filter(x => x != null);
-  return {code, checked:true, r, nFlights: live.length, open, min, hasNonstop: open.some(f => f.stops === 0),
+  return {code, checked:true, r, nFlights: live.length, open, anyOpen: live.some(f => f.gowild), min, hasNonstop: open.some(f => f.stops === 0),
           fewSeats: seats.length ? Math.min(...seats) : null, status: r.status, error: r.last_error};
 }
 
@@ -300,11 +301,38 @@ function render(){
   const checked = sums.filter(s => s.checked);
   const open = sums.filter(s => s.open && s.open.length);
   const last = checked.map(s => s.r.checked_at).sort().pop();
-  const notFlown = Object.keys(res.skipped).filter(c => !unserved.has(c)).length;
-  const notFlownNote = notFlown ? ` ${notFlown} route${notFlown === 1 ? " doesn't" : "s don't"} fly that day (untick "GoWild only" to see which).` : "";
-  $("#stat").innerHTML = checked.length
-    ? `<b>${open.length}</b> of ${checked.length} checked destinations have GoWild seats on <b>${fmtDay(state.day)}</b>` + (last ? ` · checked ${ago(last)}` + (isStale(last) ? ` · <a href="#" class="stale" onclick="event.preventDefault();if(!$('#scan').disabled)scan()">stale, click to refresh</a>` : "") : "") + (notFlown ? ` · ${notFlown} not flying` : "")
-    : `Nothing checked yet for ${fmtDay(state.day)}. Hit <b>Check</b> to pull live seats from Frontier.` + notFlownNote;
+  // why each route has (or lacks) results, so the summary can say exactly what's going on
+  const why = {notOperated:0, unscanned:0, errored:0, noFlights:0, noSeats:0, filtered:0, seats:0};
+  for(const s of sums){
+    if(res.skipped[s.code]) why.notOperated++;
+    else if(!s.checked) why.unscanned++;
+    else if(s.status === "error") why.errored++;
+    else if(s.status === "no_service") why.noFlights++;
+    else if(s.open.length) why.seats++;
+    else if(s.anyOpen) why.filtered++;
+    else why.noSeats++;
+  }
+  const n = (k, one, many) => `${k} ${k === 1 ? one : many}`;
+  const reasons = [];
+  if(why.notOperated) reasons.push(`${n(why.notOperated, "route isn't", "routes aren't")} flown by Frontier this day (per its booking calendar)`);
+  if(why.unscanned) reasons.push(`${n(why.unscanned, "route hasn't", "routes haven't")} been scanned yet`);
+  if(why.errored) reasons.push(`${n(why.errored, "route", "routes")} couldn't be read from Frontier (scan failed)`);
+  if(why.noFlights) reasons.push(`Frontier returned no flights for ${n(why.noFlights, "route", "routes")}`);
+  if(why.noSeats) reasons.push(`${n(why.noSeats, "route has", "routes have")} flights but no GoWild seats open`);
+  if(why.filtered) reasons.push(`${n(why.filtered, "route has", "routes have")} GoWild seats hidden by your Nonstop / Max $ filter`);
+  const day = fmtDay(state.day);
+  const why_ = reasons.length ? `<div class="sub">${reasons.map(r => r.charAt(0).toUpperCase() + r.slice(1)).join(". ")}.</div>` : "";
+  let head;
+  if(checked.length){
+    head = `<b>${open.length}</b> of ${checked.length} scanned destinations have GoWild seats on <b>${day}</b>` + (last ? ` · scanned ${ago(last)}` + (isStale(last) ? ` · <a href="#" class="stale" onclick="event.preventDefault();if(!$('#scan').disabled)scan()">stale, click to refresh</a>` : "") : "");
+  } else if(why.unscanned){
+    head = `Haven't scanned ${day} yet. Hit <b>Check</b> to pull live seats for the ${n(why.unscanned, "route", "routes")} Frontier flies this day.`;
+  } else if(why.notOperated === routes.length){
+    head = `Frontier doesn't fly any of these routes on ${day}, so there's nothing to scan.`;
+  } else {
+    head = `Nothing to show for ${day}.`;
+  }
+  $("#stat").innerHTML = head + why_;
 
   // list
   const showAll = !$("#openonly").checked;
@@ -433,7 +461,7 @@ async function loadReturn(from, to, day, scanIfMissing){
   }
   if(!r){ box.innerHTML = `<div class="note">Couldn't check that route.</div>`; return; }
   box.innerHTML = `<div class="note">${fmtDay(day)} · checked ${fmtStamp(r.checked_at)} · <a href="#" onclick="event.preventDefault();rescanReturn('${from}','${to}','${day}')">re-check</a> · <a href="${frontierUrl(from,to,day)}" target="_blank" rel="noopener">Open on Frontier ↗</a></div>` +
-    (r.status === "no_service" ? `<div class="note">No flights that day.</div>` : flightRows(r.flights, null, from, to, day));
+    (r.status === "no_service" ? `<div class="note">No flights this day.</div>` : flightRows(r.flights, null, from, to, day));
 }
 async function rescanReturn(from, to, day){
   $("#ret").innerHTML = `<div class="note">Checking…</div>`;
