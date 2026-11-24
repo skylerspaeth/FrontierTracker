@@ -158,6 +158,7 @@ def on_check(job, dest, result):
             _pending.setdefault(origin, {})[(dest, day, f["key"])] = {
                 "dest": dest, "day": day, "key": f["key"], "price": price, "reason": reason, "was": was,
                 "rule": classify(f, {**st, "code": dest}, nonstop, cfg), "via": f.get("via") or [],
+                "layovers": f.get("layovers"),
                 "seats": f.get("gowild_seats")}
 
 
@@ -169,7 +170,23 @@ def _day_label(day):
 
 
 def _money(p):
-    return f"${p:.0f}" if abs(p - round(p)) < 0.005 else f"${p:.2f}"
+    """Whole dollars, rounded to the nearest (halves up): 46.5 -> $47."""
+    return f"${int(p + 0.5)}"
+
+
+def _duration(minutes):
+    return f"{minutes // 60}h{minutes % 60}m"
+
+
+def _via(alert):
+    """'via DEN (14h9m) - MCO (0h50m)': connection airports with the time spent at each. Flights saved
+    before layover times were recorded show the airports alone."""
+    stops = alert.get("layovers")
+    if not stops or len(stops) != len(alert["via"]):
+        stops = [{"station": v, "minutes": None} for v in alert["via"]]
+    return "via " + " - ".join(
+        html.escape(s["station"]) + (f" ({_duration(s['minutes'])})" if s.get("minutes") is not None else "")
+        for s in stops)
 
 
 def build_digest(origin, alerts, stations, cfg=None):
@@ -185,26 +202,22 @@ def build_digest(origin, alerts, stations, cfg=None):
         best = min(group, key=lambda a: a["price"])
         st = stations.get(dest, {"city": dest})
         url = frontier.search_url(origin, dest, date.fromisoformat(day))
-        bits = [f'<a href="{html.escape(url, quote=True)}">{html.escape(place({**st, "code": dest}))}</a>',
+        name = place({**st, "code": dest}) + f" ({dest})"
+        bits = [f'<a href="{html.escape(url, quote=True)}">{html.escape(name)}</a>',
                 _money(best["price"]), _day_label(day)]
         if best["via"]:
-            bits.append("via " + ", ".join(html.escape(v) for v in best["via"]))
+            bits.append(_via(best))
         elif rule == "intl":
             bits.append("nonstop")
-        if best["seats"] is not None:
-            bits.append(f"{best['seats']} seat{'s' if best['seats'] != 1 else ''} left")
-        if best["reason"] == "drop" and best["was"] is not None:
-            bits.append(f"📉 was {_money(best['was'])}")
-        elif best["reason"] == "reopened":
+        if best["reason"] == "reopened":
             bits.append("🔁 reopened")
         if len(group) > 1:
             bits.append(f"+{len(group) - 1} more")
-        sections[rule].append((best["price"], day, "  " + " · ".join(bits)))
-    titles = {"under": f"🔥 Under {_money(cfg['under'])} (connections)", "intl": "🌎 International / Puerto Rico"}
+        sections[rule].append((best["price"], day, "• " + " · ".join(bits)))
+    titles = {"under": f"🔥 Under {_money(cfg['under'])} (connections)", "intl": "🌎 International / Offshore"}
     origin_name = place({**stations.get(origin, {"city": origin}), "code": origin})
-    head = f"🛫 <b>GoWild deals from {html.escape(origin_name)}</b>"
-    n = sum(len(v) for v in sections.values())
-    foot = f"{n} deal{'s' if n != 1 else ''} · tap a line, sign in, switch to the GoWild tab"
+    head = f"🛫 New deals from {html.escape(origin_name)} ({html.escape(origin)})"
+    foot = "Tap a deal and switch to the GoWild tab to book."
     body = []
     for rule in ("under", "intl"):
         if sections[rule]:
@@ -283,10 +296,13 @@ def _sample():
         "SJU": {"city": "San Juan", "state": "", "country": "PR", "countryName": "Puerto Rico", "domestic": True},
     }
     d = date.today().isoformat()
-    base = {"day": d, "key": "x", "seats": None, "was": None, "via": ["DEN"]}
+    base = {"day": d, "key": "x", "seats": None, "was": None, "via": ["DEN"],
+            "layovers": [{"station": "DEN", "minutes": 200}]}
     alerts = [{**base, "dest": "BOI", "price": 47.2, "reason": "new", "rule": "under"},
-              {**base, "dest": "BOG", "price": 93.53, "reason": "new", "rule": "intl", "seats": 3},
-              {**base, "dest": "SJU", "price": 79.0, "reason": "drop", "was": 96.61, "rule": "intl", "via": ["MCO"]}]
+              {**base, "dest": "BOG", "price": 93.53, "reason": "new", "rule": "intl", "seats": 3,
+               "via": ["DEN", "MCO"], "layovers": [{"station": "DEN", "minutes": 849}, {"station": "MCO", "minutes": 50}]},
+              {**base, "dest": "SJU", "price": 79.0, "reason": "drop", "was": 96.61, "rule": "intl", "via": ["MCO"],
+               "layovers": [{"station": "MCO", "minutes": 50}]}]
     return stations, alerts
 
 

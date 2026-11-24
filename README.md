@@ -46,7 +46,12 @@ cycle (nothing if there's nothing new), grouped by rule:
 
 - **Under $50** to any destination the origin has no nonstop flight to (nonstop destinations are
   always cheap, so they'd flood the chat; the list comes from your own scan history)
-- **International under $100**, or **Puerto Rico under $85**
+- **International under $100**, nonstops included (the nonstop exclusion above applies only to
+  the under-$50 rule, so every international route can alert)
+- **Puerto Rico under $85**
+
+Prices are compared before rounding and the limits are strict, so a flight at exactly the limit
+doesn't alert. Digest lines show whole dollars.
 
 A flight alerts when it is new, when its price drops $10 or more below what you were last told,
 or when a seat that sold out reopens. The first watch interval after you switch alerts on is a
@@ -67,6 +72,16 @@ The rules can be changed in `data/watch.json` without a redeploy (all optional, 
 ```json
 "notify": {"under": 50, "international": 100, "puerto_rico": 85, "drop": 10}
 ```
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `under` | 50 | alert below this price for destinations with no nonstop from the origin |
+| `international` | 100 | alert below this price to any international destination, nonstop or not |
+| `puerto_rico` | 85 | alert below this price to Puerto Rico |
+| `drop` | 10 | alert again when a flight you were already told about falls by at least this much |
+
+To be alerted on every international flight whatever it costs, set `international` to a very high
+number such as `9999`.
 
 ## Tests
 

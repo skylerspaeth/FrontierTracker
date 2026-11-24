@@ -92,6 +92,12 @@ class ClassifyTests(unittest.TestCase):
         self.assertIsNone(self.c("SJU", 91.01))         # normal in-window PR one-stop: not a deal
         self.assertEqual(self.c("SJU", 40.0, nonstop={"SJU"}), "intl")
 
+    def test_nonstop_internationals_still_alert_even_when_cheap(self):
+        # the nonstop exclusion only covers the "under $50" rule (cheap domestic nonstops); internationals always count
+        for code in ("BOG", "SJU"):
+            self.assertEqual(notify.classify(flight("k", 30.0), STATIONS[code], {code}, CFG), "intl")
+        self.assertIsNone(notify.classify(flight("k", 30.0), STATIONS["BOI"], {"BOI"}, CFG))
+
     def test_ignores_flights_without_a_gowild_fare(self):
         f = flight("k", None, gowild=False)
         self.assertIsNone(notify.classify(f, STATIONS["BOI"], set(), CFG))
@@ -175,7 +181,7 @@ class FlowTests(unittest.TestCase):
         self.assertEqual(notify.flush("AUS"), 0)
         self.check("BOG", [flight("a", 88.0, via=["MCO"])])
         self.assertEqual(notify.flush("AUS"), 1)
-        self.assertIn("was $99", self.sent[-1])
+        self.assertIn("$88", self.sent[-1])
 
     def test_reopened_seat_alerts_again(self):
         self.check("BOI", [flight("a", 47.0, via=["DEN"])])
@@ -236,10 +242,29 @@ class DigestTests(unittest.TestCase):
         msg = "\n".join(notify.build_digest("AUS", [
             self.alert("BOI", 47.0, "under"), self.alert("BOG", 93.53, "intl", seats=3),
             self.alert("SJU", 79.0, "intl", reason="drop", was=96.61)], STATIONS, CFG))
-        self.assertIn("GoWild deals from Austin, TX", msg)
-        self.assertLess(msg.index("Under $50"), msg.index("International / Puerto Rico"))
-        for text in ("Boise, ID", "Bogota, Colombia", "San Juan, Puerto Rico", "3 seats left", "was $96.61", "3 deals"):
+        self.assertIn("🛫 New deals from Austin, TX (AUS)", msg)
+        self.assertLess(msg.index("Under $50 (connections)"), msg.index("International / Offshore"))
+        for text in ("Boise, ID (BOI)", "Bogota, Colombia (BOG)", "San Juan, Puerto Rico (SJU)"):
             self.assertIn(text, msg)
+        for text in ("seats left", "was $", "📉"):
+            self.assertNotIn(text, msg)
+        self.assertTrue(msg.endswith("Tap a deal and switch to the GoWild tab to book."))
+
+    def test_prices_round_to_whole_dollars(self):
+        self.assertEqual([notify._money(p) for p in (46.5, 46.49, 47.0, 93.53, 0.4)], ["$47", "$46", "$47", "$94", "$0"])
+
+    def test_layover_times_follow_each_airport(self):
+        one = self.alert("BOI", 47.0, "under", layovers=[{"station": "DEN", "minutes": 200}])
+        two = self.alert("BOG", 94.0, "intl", via=["DEN", "MCO"],
+                         layovers=[{"station": "DEN", "minutes": 849}, {"station": "MCO", "minutes": 50}])
+        msg = "\n".join(notify.build_digest("AUS", [one, two], STATIONS, CFG))
+        self.assertIn("via DEN (3h20m)", msg)
+        self.assertIn("via DEN (14h9m) - MCO (0h50m)", msg)
+
+    def test_flights_saved_without_layover_times_still_list_airports(self):
+        msg = "\n".join(notify.build_digest("AUS", [self.alert("BOG", 94.0, "intl", via=["DEN", "MCO"])], STATIONS, CFG))
+        self.assertIn("via DEN - MCO", msg)
+        self.assertNotIn("(0h", msg)
 
     def test_one_line_per_destination_and_date(self):
         msg = "\n".join(notify.build_digest("AUS", [

@@ -89,6 +89,15 @@ class GetFlightsTests(unittest.TestCase):
         self.assertEqual((nonstop["gowild"], nonstop["gowild_price"], nonstop["gowild_seats"]), (True, 29.0, 3))
         self.assertEqual(nonstop["depart_utc"], "2026-12-01T12:00:00")
 
+    def test_layover_time_is_measured_at_each_connecting_airport(self):
+        data = {"journeys": [{"flights": [{"legs": [
+            leg("1", "2026-12-01T06:00:00", "2026-12-01T09:00:00", "DEN"),
+            leg("2", "2026-12-01T09:50:00", "2026-12-01T20:00:00", "MCO"),
+            leg("3", "2026-12-02T10:09:00", "2026-12-02T12:00:00")], "isGoWildFareEnabled": False}]}]}
+        f = self.run_with(data)["flights"][0]
+        self.assertEqual(f["layovers"], [{"station": "DEN", "minutes": 50}, {"station": "MCO", "minutes": 849}])
+        self.assertEqual(f["via"], ["DEN", "MCO"])
+
     def test_gowild_flag_without_a_price_is_not_gowild(self):
         data = {"journeys": [{"flights": [{"legs": [leg("1", "2026-12-01T06:00:00", "2026-12-01T07:00:00")],
                                            "isGoWildFareEnabled": True, "goWildFare": None}]}]}

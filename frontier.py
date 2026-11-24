@@ -283,6 +283,13 @@ def get_flights(origin, dest, d):
             if not legs:
                 continue
             nums = [f"{l.get('carrierCode', 'F9')} {l.get('flightNumber')}" for l in legs]
+            layovers = []
+            for l1, l2 in zip(legs, legs[1:]):     # both times are local to the connecting airport, so they subtract cleanly
+                try:
+                    mins = round((datetime.fromisoformat(l2["departureDate"]) - datetime.fromisoformat(l1["arrivalDate"])).total_seconds() / 60)
+                except (KeyError, TypeError, ValueError):
+                    mins = None
+                layovers.append({"station": l1["arrivalStation"], "minutes": mins})
             gw_on = bool(f.get("isGoWildFareEnabled"))
             gw_price = _price(f.get("goWildFare")) if gw_on else None
             flights.append({
@@ -294,6 +301,7 @@ def get_flights(origin, dest, d):
                 "arrive_utc": legs[-1].get("arrivalDateUtc"),
                 "stops": len(legs) - 1,
                 "via": [l["arrivalStation"] for l in legs[:-1]],
+                "layovers": layovers,                        # [{station, minutes}] per connection
                 "duration": f.get("duration"),
                 "next_day_arrival": bool(f.get("isNextDayArrival")),
                 "gowild": gw_on and gw_price is not None,
