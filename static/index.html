@@ -48,8 +48,10 @@ button.primary:disabled{opacity:.6;cursor:default}
 button.ghost{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:inherit;cursor:pointer;color:var(--ink)}
 button.ghost:hover{background:#2a2a2d}
 .toggle{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted);cursor:pointer;user-select:none}
-.toggle input[type=checkbox]{accent-color:var(--btn)}
+.toggle input[type=checkbox]{accent-color:var(--btn);margin:0}
 .progress{height:6px;background:var(--line);border-radius:3px;overflow:hidden}
+.progress+.note{margin-top:8px}
+#daynote>*+*{margin-top:8px}
 .progress i{display:block;height:100%;background:var(--accent);width:0;transition:width .4s}
 .note{font-size:12px;color:var(--muted);overflow-wrap:anywhere}
 .warn{background:var(--amber-soft);color:var(--amber);border-radius:8px;padding:8px 10px;font-size:12px}
@@ -250,7 +252,7 @@ function renderDays(){
     const b = document.createElement("button");
     b.className = "day" + (d.date === state.day ? " on" : "") + (d.peak ? " peak" : "");
     const tag = d.domestic_open ? (d.ahead === 0 ? "today" : "tomorrow") : "early booking";
-    b.title = d.domestic_open ? "" : "Outside the normal domestic window (the day before departure): domestic GoWild fares here are early-booking fares, which cost extra.\nInternational routes are inside their normal 10-day window.";
+    b.title = d.domestic_open ? "" : "Outside the normal domestic window (the day before departure): domestic GoWild fares here are early-booking fares, which cost extra.\n\nInternational routes are inside their normal 10-day window.";
     b.innerHTML = `<b>${fmtDay(d.date)}</b><span>${tag}${d.peak ? ` · <em class="pk">${peakWord()}</em>` : ""}</span>`;
     b.onclick = () => { state.day = d.date; state.selected = null; renderDays(); load(); };
     box.appendChild(b);
@@ -301,7 +303,7 @@ function render(){
   const notFlown = Object.keys(res.skipped).filter(c => !unserved.has(c)).length;
   const notFlownNote = notFlown ? ` ${notFlown} route${notFlown === 1 ? " doesn't" : "s don't"} fly that day (untick "GoWild only" to see which).` : "";
   $("#stat").innerHTML = checked.length
-    ? `<b>${open.length}</b> of ${checked.length} checked destinations have GoWild seats on <b>${fmtDay(state.day)}</b>` + (last ? ` · checked ${ago(last)}` + (isStale(last) ? ` <a href="#" class="stale" onclick="event.preventDefault();if(!$('#scan').disabled)scan()">· stale, click to refresh</a>` : "") : "") + (notFlown ? ` · ${notFlown} not flying` : "")
+    ? `<b>${open.length}</b> of ${checked.length} checked destinations have GoWild seats on <b>${fmtDay(state.day)}</b>` + (last ? ` · checked ${ago(last)}` + (isStale(last) ? ` · <a href="#" class="stale" onclick="event.preventDefault();if(!$('#scan').disabled)scan()">stale, click to refresh</a>` : "") : "") + (notFlown ? ` · ${notFlown} not flying` : "")
     : `Nothing checked yet for ${fmtDay(state.day)}. Hit <b>Check</b> to pull live seats from Frontier.` + notFlownNote;
 
   // list
