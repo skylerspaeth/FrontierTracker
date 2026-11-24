@@ -289,7 +289,7 @@ function render(){
   let note = "";
   if(state.meta.peak_reliable === false) note += `<div class="warn">Couldn't read Frontier's peak-day list, so peak days shown come from a built-in copy and may be out of date.</div>`;
   if(res.peak) note += `<div class="warn">${fmtDay(state.day)} is ${state.meta.peak_reliable === false ? "possibly" : ""} a peak day. GoWild seats can still be booked, but Frontier adds a peak-day charge, which is already included in the prices shown.</div>`;
-  if(dayInfo && !dayInfo.domestic_open) note += `<div class="note">Domestic GoWild normally opens the day before departure. Domestic fares shown for ${fmtDay(state.day)} are <b>early-booking</b> fares, which carry an extra charge, so they cost more than usual. International routes are inside their normal 10-day window.</div>`;
+  if(dayInfo && !dayInfo.domestic_open) note += `<div class="note">Domestic GoWild opens the day before departure. Domestic fares shown for ${fmtDay(state.day)} are <b>early-booking</b> fares, which carry an extra charge, so they cost more than usual. International routes are inside their normal 10-day window.</div>`;
   $("#daynote").innerHTML = note;
   // routes Frontier no longer flies at all (empty calendar) aren't destinations: leave them out
   const unserved = new Set(res.unserved || []);
@@ -302,10 +302,13 @@ function render(){
   const open = sums.filter(s => s.open && s.open.length);
   const last = checked.map(s => s.r.checked_at).sort().pop();
   // why each route has (or lacks) results, so the summary can say exactly what's going on
-  const why = {notOperated:0, unscanned:0, errored:0, noFlights:0, noSeats:0, filtered:0, seats:0};
+  const why = {notOperated:0, unscanned:0, unscannedEarly:0, errored:0, noFlights:0, noSeats:0, filtered:0, seats:0};
+  const isIntl = c => state.stations[c]?.domestic === false;
+  const earlyDay = dayInfo && !dayInfo.domestic_open;   // domestic GoWild opens the day before departure; the auto-scan only covers that
+  const intlRoutes = routes.filter(isIntl);
   for(const s of sums){
     if(res.skipped[s.code]) why.notOperated++;
-    else if(!s.checked) why.unscanned++;
+    else if(!s.checked) why[earlyDay && !isIntl(s.code) ? "unscannedEarly" : "unscanned"]++;
     else if(s.status === "error") why.errored++;
     else if(s.status === "no_service") why.noFlights++;
     else if(s.open.length) why.seats++;
@@ -314,21 +317,26 @@ function render(){
   }
   const n = (k, one, many) => `${k} ${k === 1 ? one : many}`;
   const reasons = [];
-  if(why.notOperated) reasons.push(`${n(why.notOperated, "route isn't", "routes aren't")} flown by Frontier this day (per its booking calendar)`);
-  if(why.unscanned) reasons.push(`${n(why.unscanned, "route hasn't", "routes haven't")} been scanned yet`);
-  if(why.errored) reasons.push(`${n(why.errored, "route", "routes")} couldn't be read from Frontier (scan failed)`);
-  if(why.noFlights) reasons.push(`Frontier returned no flights for ${n(why.noFlights, "route", "routes")}`);
-  if(why.noSeats) reasons.push(`${n(why.noSeats, "route has", "routes have")} flights but no GoWild seats open`);
-  if(why.filtered) reasons.push(`${n(why.filtered, "route has", "routes have")} GoWild seats hidden by your Nonstop / Max $ filter`);
+  if(why.notOperated) reasons.push(`${n(why.notOperated, "route", "routes")} not flown this day`);
+  if(intlRoutes.length && intlRoutes.every(c => res.skipped[c])) reasons.push(`No international flights from ${state.origin} this day`);
+  if(why.unscannedEarly) reasons.push(`${n(why.unscannedEarly, "domestic route", "domestic routes")} not auto-scanned this far out. Domestic GoWild opens the day before departure; <b>Check</b> shows early-booking fares`);
+  if(why.unscanned) reasons.push(`${n(why.unscanned, "route", "routes")} not scanned yet`);
+  if(why.errored) reasons.push(`${n(why.errored, "route", "routes")} failed to load from Frontier`);
+  if(why.noFlights) reasons.push(`${n(why.noFlights, "route", "routes")} returned no flights`);
+  if(why.noSeats) reasons.push(`${n(why.noSeats, "route", "routes")} with flights but no GoWild seats open`);
+  if(why.filtered) reasons.push(`${n(why.filtered, "route", "routes")} with GoWild seats hidden by your filters`);
   const day = fmtDay(state.day);
-  const why_ = reasons.length ? `<div class="sub">${reasons.map(r => r.charAt(0).toUpperCase() + r.slice(1)).join(". ")}.</div>` : "";
+  const why_ = reasons.map(r => `<div class="sub">${r}</div>`).join("");
   let head;
   if(checked.length){
     head = `<b>${open.length}</b> of ${checked.length} scanned destinations have GoWild seats on <b>${day}</b>` + (last ? ` · scanned ${ago(last)}` + (isStale(last) ? ` · <a href="#" class="stale" onclick="event.preventDefault();if(!$('#scan').disabled)scan()">stale, click to refresh</a>` : "") : "");
-  } else if(why.unscanned){
-    head = `Haven't scanned ${day} yet. Hit <b>Check</b> to pull live seats for the ${n(why.unscanned, "route", "routes")} Frontier flies this day.`;
+  } else if(why.unscanned || why.unscannedEarly){
+    const k = why.unscanned + why.unscannedEarly;
+    const todo = sums.filter(s => !res.skipped[s.code] && !s.checked);
+    const kind = todo.every(s => !isIntl(s.code)) ? "Domestic routes" : todo.every(s => isIntl(s.code)) ? "International routes" : "Routes";
+    head = `${kind} not scanned yet for ${day}. Hit <b>Check</b> to search ${n(k, "route", "routes")}.`;
   } else if(why.notOperated === routes.length){
-    head = `Frontier doesn't fly any of these routes on ${day}, so there's nothing to scan.`;
+    head = `No flights to scan on ${day}.`;
   } else {
     head = `Nothing to show for ${day}.`;
   }
