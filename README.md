@@ -68,7 +68,17 @@ The rules can be changed in `data/watch.json` without a redeploy (all optional, 
 "notify": {"under": 50, "international": 100, "puerto_rico": 85, "drop": 10}
 ```
 
-`python -m unittest discover -s tests` runs the tests for this (no network needed).
+## Tests
+
+None of the tests touch the network or your real data (`data/gowild.db` is never used).
+
+```bash
+python -m unittest discover -s tests     # Python: alerts, parsing, scan planning, booking rules, history queries
+node --test tests/departed.test.js       # JavaScript: hiding flights that have already departed
+```
+
+The Python tests need only the standard library (`curl_cffi` is stubbed). The JavaScript test needs
+Node 18+ and no packages.
 
 ## Rate limits
 
@@ -83,9 +93,10 @@ If Frontier refuses a request, the scan stops and waits 30 minutes before allowi
 - `scanner.py` runs scans, pacing and block handling
 - `store.py` SQLite history
 - `notify.py` Telegram deal alerts
-- `tests/` unit tests (alert rules, dedupe, message formatting)
+- `tests/` unit tests, see [Tests](#tests)
 - `rules.py` GoWild windows
 - `peakdays.py` peak-day dates, scraped from Frontier's GoWild page
 - `server.py` local web server and API
 - `static/index.html` the map UI
+- `static/departed.js` timezone-aware "has this flight left" check (shared by the UI and its test)
 - `data/airports.json` airport coordinates (OurAirports)

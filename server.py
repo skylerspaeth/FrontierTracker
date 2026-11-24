@@ -18,6 +18,9 @@ import store
 ROOT = os.path.dirname(os.path.abspath(__file__))
 STATIC = os.path.join(ROOT, "static")
 WATCH_PATH = os.path.join(ROOT, "data", "watch.json")
+ICONS = {"/favicon.ico": "icons/favicon.ico", "/apple-touch-icon.png": "icons/apple-touch-icon.png",
+         "/icons/favicon.ico": "icons/favicon.ico", "/icons/favicon-16.png": "icons/favicon-16.png",
+         "/icons/favicon-32.png": "icons/favicon-32.png", "/icons/apple-touch-icon.png": "icons/apple-touch-icon.png"}
 PORT = int(os.environ.get("GOWILD_PORT", "8777"))
 HOST = os.environ.get("GOWILD_HOST", "127.0.0.1")   # the Docker image sets 0.0.0.0; publish the port on loopback only
 
@@ -152,6 +155,11 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if u.path in ("/", "/index.html"):
                 return self._static("index.html", "text/html; charset=utf-8")
+            if u.path == "/departed.js":
+                return self._static("departed.js", "text/javascript; charset=utf-8")
+            if u.path in ICONS:     # browsers also probe /favicon.ico and /apple-touch-icon.png at the root
+                name = ICONS[u.path]
+                return self._static(name, "image/x-icon" if name.endswith(".ico") else "image/png")
             if u.path == "/api/meta":
                 return self._json(meta())
             if u.path == "/api/results":

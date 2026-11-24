@@ -10,15 +10,7 @@ import types
 import unittest
 from datetime import date, timedelta
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, ROOT)
-if "curl_cffi" not in sys.modules:
-    try:
-        import curl_cffi  # noqa: F401
-    except ImportError:
-        stub = types.ModuleType("curl_cffi")
-        stub.requests = types.SimpleNamespace(Session=object)
-        sys.modules["curl_cffi"] = stub
+import _stub  # noqa: F401  (sets sys.path, stubs curl_cffi)
 
 import frontier  # noqa: E402
 import notify  # noqa: E402
