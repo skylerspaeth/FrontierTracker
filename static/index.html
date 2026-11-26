@@ -360,7 +360,8 @@ function render(){
       meta = `${s.open.length} GoWild flight${s.open.length>1?"s":""}` + (s.hasNonstop ? `<span class="badge non">nonstop</span>` : "") +
         (s.fewSeats != null ? `<span class="badge seats">${s.fewSeats} seat${s.fewSeats>1?"s":""} left</span>` : "");
       price = fmtMoney(s.min);
-    } else { meta = `${s.nFlights} flight${s.nFlights===1?"":"s"}, no GoWild seats`; price = "none"; }
+    } else if(s.anyOpen){ meta = "GoWild seats hidden by your filters"; price = "—"; }
+    else { meta = `${s.nFlights} flight${s.nFlights===1?"":"s"}, no GoWild seats`; price = "none"; }
     div.innerHTML = `<div class="name">${esc(st.label)}</div><div class="price ${isOpen?"open":""}">${price}</div><div class="meta">${meta}</div><div></div>`;
     div.onclick = () => select(s.code);
     list.appendChild(div);
@@ -386,7 +387,9 @@ function drawMap(o, sums){
       : s.checked ? {radius:4, color:"#55555a", weight:1, fillColor:"#55555a", fillOpacity:1}
                   : {radius:4, color:"#8a8a90", weight:1.5, fillColor:"#0d0d0e", fillOpacity:1}).addTo(layer);
     const tip = isOpen ? `<b>${esc(st.label)}</b><br>GoWild from ${fmtMoney(s.min)} · ${s.open.length} flight${s.open.length>1?"s":""}`
-      : `<b>${esc(st.label)}</b><br>${s.checked ? (s.status === "no_service" ? "no flights this day" : "no GoWild seats") : "not checked"}`;
+      : `<b>${esc(st.label)}</b><br>${!s.checked ? esc(state.results.skipped[s.code] || "not checked")
+          : s.status === "error" ? "scan failed" : s.status === "no_service" ? "no flights this day"
+          : s.anyOpen ? "GoWild seats hidden by your filters" : "no GoWild seats"}`;
     m.bindTooltip(tip, {className:"plain"});
     m.on("click", () => select(s.code));
     if(isOpen) L.marker([st.lat, st.lon], {icon: L.divIcon({className:"", html:`<span class="pricetag">${s.code} $${Math.round(s.min)}</span>`, iconAnchor:[-8, 22]}), interactive:false}).addTo(layer);
