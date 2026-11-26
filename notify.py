@@ -3,10 +3,10 @@
 After each scan result is stored, `on_check` looks at the GoWild flights in it and decides
 which are new deals under the configured rules:
 
-  1. under $50 to a destination the origin has no nonstop flight to (nonstop destinations are
+  1. under $30 to a destination the origin has no nonstop flight to (nonstop destinations are
      routinely $15-$31, so they would flood the chat; the set is derived from our own data),
-  2. any international destination under $100, or Puerto Rico under a lower cap ($85, because
-     ordinary in-window one-stops there cost ~$91-$97).
+  2. any international destination under $100, or Puerto Rico under a lower cap ($65; ordinary
+     in-window one-stops there cost ~$91-$97).
 
 Matches are collected, and once every scan job of a watcher cycle has finished, one digest message
 per origin is sent (`flush_when_done`). A flight alerts when it is new, when its price falls by at
@@ -16,7 +16,7 @@ empty database doesn't send everything that's already open.
 
 Setup: set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in the environment (see README). Without them
 this module does nothing. Rules live in data/watch.json under "notify" (all optional):
-    {"under": 50, "international": 100, "puerto_rico": 85, "drop": 10}
+    {"under": 30, "international": 100, "puerto_rico": 65, "drop": 10}
 `python notify.py --test` sends a sample digest to check the setup.
 """
 import html
@@ -33,7 +33,7 @@ from datetime import date
 import frontier
 import store
 
-DEFAULTS = {"under": 50, "international": 100, "puerto_rico": 85, "drop": 10}
+DEFAULTS = {"under": 30, "international": 100, "puerto_rico": 65, "drop": 10}
 WATCH_PATH = os.path.join(frontier.DATA_DIR, "watch.json")
 MAX_MESSAGE = 3800          # Telegram's hard limit is 4096 characters
 BASELINE_MIN_MINUTES = 60
@@ -75,12 +75,17 @@ def config():
 
 # ---------------------------------------------------------------- names and matching
 
+def _offshore(st):
+    """International, Puerto Rico or the Virgin Islands."""
+    return st.get("country") in ("PR", "VI") or not st.get("domestic", True)
+
+
 def place(st):
     """'Los Angeles, CA' for domestic; 'San Juan, Puerto Rico' / 'Bogota, Colombia' for Puerto Rico
     and international. Frontier's country names carry suffixes ("Colombia, Republic of"): keep the
     part before the first comma."""
     city = (st.get("city") or st.get("code") or "").strip()
-    if st.get("country") in ("PR", "VI") or not st.get("domestic", True):
+    if _offshore(st):
         country = (st.get("countryName") or st.get("country") or "").split(",")[0].strip()
         return f"{city}, {country}" if country else city
     state = (st.get("state") or "").strip()
@@ -90,18 +95,23 @@ def place(st):
 
 
 def classify(flight, dest_station, nonstop_dests, cfg):
-    """Which rule a GoWild flight matches: 'under', 'intl', or None."""
+    """Which digest section a GoWild flight alerts in: 'under', 'intl', or None if it matches no rule.
+    International and offshore (Puerto Rico, Virgin Islands) deals are always 'intl', including
+    those that only qualify because they're under the 'under' price."""
     price = flight.get("gowild_price")
     if not flight.get("gowild") or price is None:
         return None
     code = dest_station.get("code")
-    if price < cfg["under"] and code not in nonstop_dests:
-        return "under"
+    under = price < cfg["under"] and code not in nonstop_dests
+    if not _offshore(dest_station):
+        return "under" if under else None
     if dest_station.get("country") == "PR":
-        return "intl" if price < cfg["puerto_rico"] else None
-    if not dest_station.get("domestic", True):
-        return "intl" if price < cfg["international"] else None
-    return None
+        cap = cfg["puerto_rico"]
+    elif not dest_station.get("domestic", True):
+        cap = cfg["international"]
+    else:
+        cap = None                      # Virgin Islands: only the 'under' rule applies
+    return "intl" if under or (cap is not None and price < cap) else None
 
 
 def _nonstop(origin):
@@ -298,10 +308,10 @@ def _sample():
     d = date.today().isoformat()
     base = {"day": d, "key": "x", "seats": None, "was": None, "via": ["DEN"],
             "layovers": [{"station": "DEN", "minutes": 200}]}
-    alerts = [{**base, "dest": "BOI", "price": 47.2, "reason": "new", "rule": "under"},
+    alerts = [{**base, "dest": "BOI", "price": 27.2, "reason": "new", "rule": "under"},
               {**base, "dest": "BOG", "price": 93.53, "reason": "new", "rule": "intl", "seats": 3,
                "via": ["DEN", "MCO"], "layovers": [{"station": "DEN", "minutes": 849}, {"station": "MCO", "minutes": 50}]},
-              {**base, "dest": "SJU", "price": 79.0, "reason": "drop", "was": 96.61, "rule": "intl", "via": ["MCO"],
+              {**base, "dest": "SJU", "price": 54.0, "reason": "drop", "was": 64.5, "rule": "intl", "via": ["MCO"],
                "layovers": [{"station": "MCO", "minutes": 50}]}]
     return stations, alerts
 

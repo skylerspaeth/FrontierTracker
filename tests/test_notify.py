@@ -73,10 +73,10 @@ class ClassifyTests(unittest.TestCase):
     def c(self, code, price, nonstop=()):
         return notify.classify(flight("k", price), STATIONS[code], set(nonstop), CFG)
 
-    def test_under_50_connection_destination(self):
-        self.assertEqual(self.c("BOI", 47.0), "under")
-        self.assertIsNone(self.c("BOI", 50.0))          # the cap is exclusive
-        self.assertIsNone(self.c("BOI", 60.0))
+    def test_under_30_connection_destination(self):
+        self.assertEqual(self.c("BOI", 27.0), "under")
+        self.assertIsNone(self.c("BOI", 30.0))          # the cap is exclusive
+        self.assertIsNone(self.c("BOI", 40.0))
 
     def test_nonstop_destinations_are_excluded_from_rule_one(self):
         self.assertIsNone(self.c("ATL", 15.41, nonstop={"ATL"}))
@@ -88,15 +88,28 @@ class ClassifyTests(unittest.TestCase):
         self.assertIsNone(self.c("BOG", 140.0))
 
     def test_puerto_rico_has_its_own_lower_cap(self):
-        self.assertEqual(self.c("SJU", 79.0), "intl")
+        self.assertEqual(self.c("SJU", 59.0), "intl")
+        self.assertIsNone(self.c("SJU", 65.0))          # the cap is exclusive
         self.assertIsNone(self.c("SJU", 91.01))         # normal in-window PR one-stop: not a deal
         self.assertEqual(self.c("SJU", 40.0, nonstop={"SJU"}), "intl")
 
     def test_nonstop_internationals_still_alert_even_when_cheap(self):
-        # the nonstop exclusion only covers the "under $50" rule (cheap domestic nonstops); internationals always count
+        # the nonstop exclusion only covers the "under $30" rule (cheap domestic nonstops); internationals always count
         for code in ("BOG", "SJU"):
-            self.assertEqual(notify.classify(flight("k", 30.0), STATIONS[code], {code}, CFG), "intl")
-        self.assertIsNone(notify.classify(flight("k", 30.0), STATIONS["BOI"], {"BOI"}, CFG))
+            self.assertEqual(notify.classify(flight("k", 20.0), STATIONS[code], {code}, CFG), "intl")
+        self.assertIsNone(notify.classify(flight("k", 20.0), STATIONS["BOI"], {"BOI"}, CFG))
+
+    def test_offshore_and_international_never_go_in_the_under_section(self):
+        for code in ("BOG", "SJU"):
+            self.assertEqual(self.c(code, 38.0), "intl")
+        vi = st("STT", "St Thomas", "", "VI", "US Virgin Islands", True)
+        self.assertEqual(notify.classify(flight("k", 28.0), vi, set(), CFG), "intl")
+        self.assertIsNone(notify.classify(flight("k", 28.0), vi, {"STT"}, CFG))
+        self.assertIsNone(notify.classify(flight("k", 38.0), vi, set(), CFG))
+        # still alerts if the offshore cap is configured below the "under" price
+        low = {**CFG, "puerto_rico": 20, "international": 20}
+        for code in ("BOG", "SJU"):
+            self.assertEqual(notify.classify(flight("k", 28.0), STATIONS[code], set(), low), "intl")
 
     def test_ignores_flights_without_a_gowild_fare(self):
         f = flight("k", None, gowild=False)
@@ -165,12 +178,12 @@ class FlowTests(unittest.TestCase):
         notify.on_check(job, dest, {"flights": flights})
 
     def test_new_deal_alerts_once_then_stays_quiet(self):
-        self.check("BOI", [flight("a", 47.0, via=["DEN"])])
+        self.check("BOI", [flight("a", 27.0, via=["DEN"])])
         self.assertEqual(notify.flush("AUS"), 1)
         self.assertEqual(len(self.sent), 1)
         self.assertIn("Boise, ID", self.sent[0])
-        self.assertIn("$47", self.sent[0])
-        self.check("BOI", [flight("a", 47.0, via=["DEN"])])
+        self.assertIn("$27", self.sent[0])
+        self.check("BOI", [flight("a", 27.0, via=["DEN"])])
         self.assertEqual(notify.flush("AUS"), 0)
         self.assertEqual(len(self.sent), 1)
 
@@ -184,49 +197,49 @@ class FlowTests(unittest.TestCase):
         self.assertIn("$88", self.sent[-1])
 
     def test_reopened_seat_alerts_again(self):
-        self.check("BOI", [flight("a", 47.0, via=["DEN"])])
+        self.check("BOI", [flight("a", 27.0, via=["DEN"])])
         notify.flush("AUS")
         self.check("BOI", [])                                   # seat closed
-        self.check("BOI", [flight("a", 47.0, via=["DEN"])])     # and came back
+        self.check("BOI", [flight("a", 27.0, via=["DEN"])])     # and came back
         self.assertEqual(notify.flush("AUS"), 1)
         self.assertIn("reopened", self.sent[-1])
 
     def test_nonstop_destination_is_not_alerted_but_connection_elsewhere_is(self):
-        self.check("ATL", [flight("n", 15.41), flight("c", 30.0, via=["DEN"])])
+        self.check("ATL", [flight("n", 15.41), flight("c", 25.0, via=["DEN"])])
         self.assertEqual(notify.flush("AUS"), 0)
-        self.check("LAX", [flight("c", 40.0, via=["DEN"])])
+        self.check("LAX", [flight("c", 25.0, via=["DEN"])])
         self.assertEqual(notify.flush("AUS"), 1)
 
     def test_manual_checks_never_alert_but_still_track_closures(self):
-        self.check("BOI", [flight("a", 47.0, via=["DEN"])], job=Job(notify=False))
+        self.check("BOI", [flight("a", 27.0, via=["DEN"])], job=Job(notify=False))
         self.assertEqual(notify.flush("AUS"), 0)
-        self.check("BOI", [flight("a", 47.0, via=["DEN"])])
+        self.check("BOI", [flight("a", 27.0, via=["DEN"])])
         notify.flush("AUS")
         self.check("BOI", [], job=Job(notify=False))            # a manual check sees it closed
         self.assertFalse(store.alerts_for("AUS", "BOI", "2026-12-01")["a+F9 9"]["open"])
 
     def test_baseline_period_records_silently(self):
         store.meta_set("notify_started", __import__("time").time())     # just switched on
-        self.check("BOI", [flight("a", 47.0, via=["DEN"])])
+        self.check("BOI", [flight("a", 27.0, via=["DEN"])])
         self.assertEqual(notify.flush("AUS"), 0)
         self.assertEqual(self.sent, [])
         self.assertIn("a+F9 9", store.alerts_for("AUS", "BOI", "2026-12-01"))
         store.meta_set("notify_started", 0)                              # baseline over
-        self.check("BOI", [flight("a", 47.0, via=["DEN"])])
+        self.check("BOI", [flight("a", 27.0, via=["DEN"])])
         self.assertEqual(notify.flush("AUS"), 0)                         # already known: still quiet
 
     def test_failed_send_is_retried_next_cycle(self):
         self.send_ok = False
-        self.check("BOI", [flight("a", 47.0, via=["DEN"])])
+        self.check("BOI", [flight("a", 27.0, via=["DEN"])])
         self.assertEqual(notify.flush("AUS"), 0)
         self.assertEqual(store.alerts_for("AUS", "BOI", "2026-12-01"), {})
         self.send_ok = True
-        self.check("BOI", [flight("a", 47.0, via=["DEN"])])
+        self.check("BOI", [flight("a", 27.0, via=["DEN"])])
         self.assertEqual(notify.flush("AUS"), 1)
 
     def test_disabled_without_env_vars(self):
         os.environ.pop("TELEGRAM_BOT_TOKEN")
-        self.check("BOI", [flight("a", 47.0, via=["DEN"])])
+        self.check("BOI", [flight("a", 27.0, via=["DEN"])])
         self.assertEqual(notify.flush("AUS"), 0)
         self.assertEqual(self.sent, [])
 
@@ -240,10 +253,10 @@ class DigestTests(unittest.TestCase):
 
     def test_grouped_by_rule_with_place_names(self):
         msg = "\n".join(notify.build_digest("AUS", [
-            self.alert("BOI", 47.0, "under"), self.alert("BOG", 93.53, "intl", seats=3),
-            self.alert("SJU", 79.0, "intl", reason="drop", was=96.61)], STATIONS, CFG))
+            self.alert("BOI", 27.0, "under"), self.alert("BOG", 93.53, "intl", seats=3),
+            self.alert("SJU", 54.0, "intl", reason="drop", was=64.5)], STATIONS, CFG))
         self.assertIn("🛫 New deals from Austin, TX (AUS)", msg)
-        self.assertLess(msg.index("Under $50 (connections)"), msg.index("International / Offshore"))
+        self.assertLess(msg.index("Under $30 (connections)"), msg.index("International / Offshore"))
         for text in ("Boise, ID (BOI)", "Bogota, Colombia (BOG)", "San Juan, Puerto Rico (SJU)"):
             self.assertIn(text, msg)
         for text in ("seats left", "was $", "📉"):
@@ -254,7 +267,7 @@ class DigestTests(unittest.TestCase):
         self.assertEqual([notify._money(p) for p in (46.5, 46.49, 47.0, 93.53, 0.4)], ["$47", "$46", "$47", "$94", "$0"])
 
     def test_layover_times_follow_each_airport(self):
-        one = self.alert("BOI", 47.0, "under", layovers=[{"station": "DEN", "minutes": 200}])
+        one = self.alert("BOI", 27.0, "under", layovers=[{"station": "DEN", "minutes": 200}])
         two = self.alert("BOG", 94.0, "intl", via=["DEN", "MCO"],
                          layovers=[{"station": "DEN", "minutes": 849}, {"station": "MCO", "minutes": 50}])
         msg = "\n".join(notify.build_digest("AUS", [one, two], STATIONS, CFG))
@@ -268,19 +281,19 @@ class DigestTests(unittest.TestCase):
 
     def test_one_line_per_destination_and_date(self):
         msg = "\n".join(notify.build_digest("AUS", [
-            self.alert("BOI", 47.0, "under", key="a"), self.alert("BOI", 44.0, "under", key="b")], STATIONS, CFG))
+            self.alert("BOI", 27.0, "under", key="a"), self.alert("BOI", 24.0, "under", key="b")], STATIONS, CFG))
         self.assertEqual(msg.count("Boise, ID"), 1)
-        self.assertIn("$44", msg)
+        self.assertIn("$24", msg)
         self.assertIn("+1 more", msg)
 
     def test_html_is_escaped_and_links_point_at_frontier(self):
         stations = {**STATIONS, "BOI": st("BOI", "Boise <&>", "ID", "US", US, True)}
-        msg = "\n".join(notify.build_digest("AUS", [self.alert("BOI", 47.0, "under")], stations, CFG))
+        msg = "\n".join(notify.build_digest("AUS", [self.alert("BOI", 27.0, "under")], stations, CFG))
         self.assertIn("Boise &lt;&amp;&gt;, ID", msg)
         self.assertIn("booking.flyfrontier.com/Flight/InternalSelect?o1=AUS&amp;d1=BOI", msg)
 
     def test_long_digests_are_split_under_the_limit(self):
-        alerts = [self.alert("BOI", 40.0 + i / 100, "under", day=(date(2026, 12, 1) + timedelta(days=i)).isoformat())
+        alerts = [self.alert("BOI", 20.0 + i / 100, "under", day=(date(2026, 12, 1) + timedelta(days=i)).isoformat())
                   for i in range(120)]
         msgs = notify.build_digest("AUS", alerts, STATIONS, CFG)
         self.assertGreater(len(msgs), 1)
