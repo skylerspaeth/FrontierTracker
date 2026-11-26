@@ -169,7 +169,7 @@ a.book:hover{background:var(--btn-hover)}
     <div id="map"></div>
     <div class="legend">
       <div><span class="dot" style="background:var(--green)"></span>GoWild seats open</div>
-      <div><span class="dot" style="background:#55555a"></span>Checked, none open</div>
+      <div><span class="dot" style="background:#55555a"></span><span id="legendnone">Checked, none open</span></div>
       <div><span class="dot" style="border:2px solid #8a8a90;width:9px;height:9px"></span>Route not checked yet</div>
     </div>
   </div>
@@ -375,16 +375,21 @@ function render(){
 
 function drawMap(o, sums){
   layer.clearLayers();
+  const filtering = $("#nonstop").checked || !isNaN(parseFloat($("#maxp").value));
+  $("#legendnone").textContent = filtering ? "Checked, none match filters" : "Checked, none open";
   if(!o) return;
   const pts = [[o.lat, o.lon]];
   for(const s of sums){
     const st = state.stations[s.code]; if(!st) continue;
     const isOpen = s.open && s.open.length;
     pts.push([st.lat, st.lon]);
+    // grey means we know the answer: a successful scan, or no flights that day. A failed scan doesn't count.
+    const skip = state.results.skipped[s.code];
+    const known = s.checked ? s.status !== "error" : !!skip && skip !== "date has passed";
     if(isOpen) L.polyline([[o.lat,o.lon],[st.lat,st.lon]], {color:"#4ade80", weight:1.5, opacity:.5}).addTo(layer);
     const m = L.circleMarker([st.lat, st.lon], isOpen
       ? {radius:7, color:"#0d0d0e", weight:2, fillColor:"#4ade80", fillOpacity:1}
-      : s.checked ? {radius:4, color:"#55555a", weight:1, fillColor:"#55555a", fillOpacity:1}
+      : known ? {radius:4, color:"#55555a", weight:1, fillColor:"#55555a", fillOpacity:1}
                   : {radius:4, color:"#8a8a90", weight:1.5, fillColor:"#0d0d0e", fillOpacity:1}).addTo(layer);
     const tip = isOpen ? `<b>${esc(st.label)}</b><br>GoWild from ${fmtMoney(s.min)} · ${s.open.length} flight${s.open.length>1?"s":""}`
       : `<b>${esc(st.label)}</b><br>${!s.checked ? esc(state.results.skipped[s.code] || "not checked")
