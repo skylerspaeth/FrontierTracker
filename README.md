@@ -33,6 +33,10 @@ Needs Python 3.11+ and `pip install -r requirements.txt`.
   reads those calendars for every route from a watched airport (about 80 requests every 3 days,
   paced) and the app uses them to skip routes that don't fly a given date ("no service until
   Mar 4") and to hide routes with no flying dates left at all.
+- **Frontier-operated only**: GoWild doesn't cover codeshare flights, so itineraries with a
+  partner (Volaris) leg are left out. Airports that Frontier only reaches that way (every Mexican
+  one it sells except Cancun, as of November 2026) are listed in `CODESHARE_ONLY` in
+  `frontier.py` and never shown or scanned. The From list also omits airports with no routes.
 - **Tracking**: every check is saved in `data/gowild.db`. The flight list shows when each
   GoWild seat was first seen open, the price range seen, and seats that have since closed.
   Turn on **Auto-track** for an airport to re-check today's and tomorrow's flights every 2 hours while

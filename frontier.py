@@ -37,6 +37,15 @@ MAX_GAP = 7.0
 # Frontier sells Puerto Rico as domestic (US taxes, day-before GoWild window).
 DOMESTIC_COUNTRIES = {"US", "PR", "VI"}
 
+# GoWild only covers Frontier-operated flights, and "Codeshare flights are not available with the
+# GoWild Pass" (Frontier's FAQ), so an itinerary with any partner leg is no use here.
+OWN_CARRIER = "F9"
+# Airports Frontier sells but only reaches on a Volaris leg: every search checked on 2026-11-26 had
+# one. Their routes are dropped so they are never listed or scanned. Remove a code from this set if
+# Frontier starts flying there itself.
+CODESHARE_ONLY = frozenset(
+    "AGU BJX CUL CUU DGO GDL MEX MLM MTY NLU OAX PBC QRO SLP TGZ TIJ TLC TPQ UPN ZCL".split())
+
 
 class FrontierError(Exception):
     """Frontier refused or returned something we can't read. `blocked` = bot wall / rate limit."""
@@ -104,7 +113,17 @@ _markets_lock = threading.Lock()
 
 
 def get_markets(force=False):
-    """{'stations': {code: {...}}, 'routes': {from: [to,...]}, 'fetched_at': iso}"""
+    """{'stations': {code: {...}}, 'routes': {from: [to,...]}, 'fetched_at': iso}
+    Routes to or from CODESHARE_ONLY airports are left out."""
+    m = _load_markets(force)
+    # filtered on the way out, so a change to the set applies to an already cached file too
+    m["routes"] = {o: [d for d in dests if d not in CODESHARE_ONLY]
+                   for o, dests in m["routes"].items() if o not in CODESHARE_ONLY}
+    return m
+
+
+def _load_markets(force):
+    """Frontier's full station and route list, from disk when it is under a day old."""
     with _markets_lock:
         if not force and os.path.exists(MARKETS_PATH):
             if time.time() - os.path.getmtime(MARKETS_PATH) < MARKETS_MAX_AGE:
@@ -260,7 +279,8 @@ def _seats(text):
 
 
 def get_flights(origin, dest, d):
-    """All itineraries Frontier lists for origin->dest on date d, normalized.
+    """Frontier-operated itineraries listed for origin->dest on date d, normalized. Any itinerary
+    with a partner-operated leg is left out.
 
     Returns {'flights': [...], 'lowest_gowild': float|None, 'gowild_out_of_range': bool}
     """
@@ -280,9 +300,9 @@ def get_flights(origin, dest, d):
             continue
         for f in j.get("flights") or []:
             legs = f.get("legs") or []
-            if not legs:
+            if not legs or any(l.get("carrierCode", OWN_CARRIER) != OWN_CARRIER for l in legs):
                 continue
-            nums = [f"{l.get('carrierCode', 'F9')} {l.get('flightNumber')}" for l in legs]
+            nums = [f"{l.get('carrierCode', OWN_CARRIER)} {l.get('flightNumber')}" for l in legs]
             layovers = []
             for l1, l2 in zip(legs, legs[1:]):     # both times are local to the connecting airport, so they subtract cleanly
                 try:

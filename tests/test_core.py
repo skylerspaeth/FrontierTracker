@@ -108,6 +108,14 @@ class GetFlightsTests(unittest.TestCase):
             {"legs": [leg("1", "2026-12-01T06:00:00", "2026-12-01T07:00:00")]}]}]}
         self.assertEqual(self.run_with(data)["flights"], [])
 
+    def test_itineraries_with_a_partner_leg_are_dropped(self):
+        partner = dict(leg("6", "2026-12-01T09:00:00", "2026-12-01T11:00:00"), carrierCode="Y4")
+        data = {"journeys": [{"flights": [
+            {"legs": [leg("1", "2026-12-01T06:00:00", "2026-12-01T08:00:00", "IAH"), partner]},
+            {"legs": [partner]},
+            {"legs": [leg("2", "2026-12-01T07:00:00", "2026-12-01T10:00:00")]}]}]}
+        self.assertEqual([f["flight_numbers"] for f in self.run_with(data)["flights"]], [["F9 2"]])
+
     def test_page_without_flightdata_raises_and_flags_captcha(self):
         with mock.patch.object(frontier, "_get", return_value=(200, "<html>nothing</html>")):
             with self.assertRaises(frontier.FrontierError) as c:
@@ -117,6 +125,14 @@ class GetFlightsTests(unittest.TestCase):
             with self.assertRaises(frontier.FrontierError) as c:
                 frontier.get_flights("AUS", "DEN", date(2026, 12, 1))
         self.assertTrue(c.exception.blocked)
+
+
+class MarketsTests(unittest.TestCase):
+    def test_codeshare_only_airports_have_no_routes_either_way(self):
+        raw = {"stations": {}, "routes": {"DEN": ["CUN", "GDL", "LAS"], "GDL": ["DEN"], "CUN": ["DEN", "MEX"]}}
+        with mock.patch.object(frontier, "_load_markets", return_value=raw):
+            routes = frontier.get_markets()["routes"]
+        self.assertEqual(routes, {"DEN": ["CUN", "LAS"], "CUN": ["DEN"]})
 
 
 class ScheduleGapTests(unittest.TestCase):

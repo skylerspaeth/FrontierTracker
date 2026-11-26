@@ -93,6 +93,7 @@ a.book:hover{background:var(--btn-hover)}
 .dot{width:10px;height:10px;border-radius:50%;display:inline-block;flex:none}
 .mapwrap{position:relative;min-height:0;min-width:0}
 .pricetag{background:var(--green);color:#04170b;font-weight:700;font-size:11px;padding:1px 5px;border-radius:6px;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,.6)}
+.pricetag.sel{background:#38bdf8;color:#04131c}
 
 /* Leaflet dark skin */
 .leaflet-container{background:var(--bg);font-family:inherit}
@@ -220,13 +221,16 @@ async function init(){
   for(const s of state.meta.stations) state.stations[s.code] = s;
   const sel = $("#origin");
   const groups = {};
-  const mine = state.meta.watch.origins.filter(c => state.stations[c]);
+  // airports with no routes (none sold, or only reachable on a partner airline) have nothing to pick
+  const origins = state.meta.stations.filter(s => s.routes.length);
+  const isOrigin = c => !!state.stations[c]?.routes.length;
+  const mine = state.meta.watch.origins.filter(isOrigin);
   if(mine.length){
     const og = document.createElement("optgroup"); og.label = "Tracked airports";
     for(const c of mine){ const s = state.stations[c]; const o = document.createElement("option"); o.value = c; o.textContent = s.label + (s.state ? ", " + s.state : ""); og.appendChild(o); }
     sel.appendChild(og);
   }
-  for(const s of state.meta.stations){ if(!mine.includes(s.code)) (groups[s.countryName] ||= []).push(s); }
+  for(const s of origins){ if(!mine.includes(s.code)) (groups[s.countryName] ||= []).push(s); }
   const order = Object.keys(groups).sort((a,b) => (b.startsWith("United States")) - (a.startsWith("United States")) || a.localeCompare(b));
   for(const g of order){
     const og = document.createElement("optgroup"); og.label = g;
@@ -234,7 +238,7 @@ async function init(){
     sel.appendChild(og);
   }
   const saved = (() => { try { return localStorage.getItem("gw.origin"); } catch(e) { return null; } })();
-  state.origin = saved && state.stations[saved] ? saved : (state.meta.watch.origins[0] || "DEN");
+  state.origin = saved && isOrigin(saved) ? saved : (mine[0] || "DEN");
   sel.value = state.origin;
   state.day = state.meta.days[1].date;  // tomorrow
   $("#fresh").textContent = "Live from flyfrontier.com · route list updated " + fmtStamp(state.meta.markets_fetched_at);
@@ -369,9 +373,13 @@ function render(){
   if(rows.length) list.insertAdjacentHTML("beforeend", `<div class="foot">Showing all ${rows.length} destination${rows.length===1?"":"s"} currently available.</div>`);
   if(!rows.length && checked.length) list.innerHTML = `<div class="stat">No destinations match. Untick "GoWild only" to see everything.</div>`;
 
+  state.sums = sums;
   drawMap(o, sums);
   if(state.selected) showDetail(state.selected);
 }
+
+const SEL = "#38bdf8";   // selected destination (matches .pricetag.sel)
+const redrawMap = () => drawMap(state.stations[state.origin], state.sums || []);
 
 function drawMap(o, sums){
   layer.clearLayers();
@@ -379,15 +387,23 @@ function drawMap(o, sums){
   $("#legendnone").textContent = filtering ? "Checked, none match filters" : "Checked, none open";
   if(!o) return;
   const pts = [[o.lat, o.lon]];
-  for(const s of sums){
+  // the selected destination is drawn last so its line and pin sit on top of the others
+  const isSel = s => s.code === state.selected;
+  for(const s of [...sums].sort((a,b) => isSel(a) - isSel(b))){
     const st = state.stations[s.code]; if(!st) continue;
     const isOpen = s.open && s.open.length;
+    const sel = isSel(s);
     pts.push([st.lat, st.lon]);
     // grey means we know the answer: a successful scan, or no flights that day. A failed scan doesn't count.
     const skip = state.results.skipped[s.code];
     const known = s.checked ? s.status !== "error" : !!skip && skip !== "date has passed";
-    if(isOpen) L.polyline([[o.lat,o.lon],[st.lat,st.lon]], {color:"#4ade80", weight:1.5, opacity:.5}).addTo(layer);
-    const m = L.circleMarker([st.lat, st.lon], isOpen
+    // a selected destination gets a leg line even with no GoWild seats open
+    if(isOpen || sel) L.polyline([[o.lat,o.lon],[st.lat,st.lon]], sel
+      ? {color:SEL, weight:3.5, opacity:1}
+      : {color:"#4ade80", weight:1.5, opacity:.5}).addTo(layer);
+    const m = L.circleMarker([st.lat, st.lon], sel
+      ? {radius:9, color:"#ffffff", weight:2.5, fillColor:SEL, fillOpacity:1}
+      : isOpen
       ? {radius:7, color:"#0d0d0e", weight:2, fillColor:"#4ade80", fillOpacity:1}
       : known ? {radius:4, color:"#55555a", weight:1, fillColor:"#55555a", fillOpacity:1}
                   : {radius:4, color:"#8a8a90", weight:1.5, fillColor:"#0d0d0e", fillOpacity:1}).addTo(layer);
@@ -397,7 +413,7 @@ function drawMap(o, sums){
           : s.anyOpen ? "GoWild seats hidden by your filters" : "no GoWild seats"}`;
     m.bindTooltip(tip, {className:"plain"});
     m.on("click", () => select(s.code));
-    if(isOpen) L.marker([st.lat, st.lon], {icon: L.divIcon({className:"", html:`<span class="pricetag">${s.code} $${Math.round(s.min)}</span>`, iconAnchor:[-8, 22]}), interactive:false}).addTo(layer);
+    if(isOpen) L.marker([st.lat, st.lon], {icon: L.divIcon({className:"", html:`<span class="pricetag${sel ? " sel" : ""}">${s.code} $${Math.round(s.min)}</span>`, iconAnchor:[-8, 22]}), interactive:false, zIndexOffset: sel ? 10000 : 0}).addTo(layer);
   }
   L.circleMarker([o.lat, o.lon], {radius:9, color:"#4ade80", weight:3, fillColor:"#ffffff", fillOpacity:1}).bindTooltip(`<b>${esc(o.label)}</b>`, {className:"plain"}).addTo(layer);
   if(!state.fitFor || state.fitFor !== state.origin){ map.fitBounds(pts, {padding:[40,40], maxZoom:6}); state.fitFor = state.origin; }
@@ -407,6 +423,7 @@ function select(code){
   state.selected = code;
   $("#list").style.display = "none";
   $("#detail").style.display = "block";
+  redrawMap();
   showDetail(code);
   $("#detail").scrollIntoView({block:"start"});
 }
@@ -414,6 +431,7 @@ function closeDetail(){
   state.selected = null;
   $("#detail").style.display = "none";
   $("#list").style.display = "block";
+  redrawMap();
   $("#stat").scrollIntoView({block:"nearest"});
 }
 
