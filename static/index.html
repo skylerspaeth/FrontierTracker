@@ -47,6 +47,8 @@ button.primary:hover:not(:disabled){background:var(--btn-hover)}
 button.primary:disabled{opacity:.6;cursor:default}
 button.ghost{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:inherit;cursor:pointer;color:var(--ink)}
 button.ghost:hover{background:#2a2a2d}
+kbd{display:inline-block;margin-left:6px;padding:1px 5px;border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;background:var(--panel);color:var(--muted);font:600 11px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace}
+@media (hover:none) and (pointer:coarse){ kbd{display:none} }  /* touch screens: no Esc key to hint at */
 .toggle{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted);cursor:pointer;user-select:none}
 .toggle input[type=checkbox]{accent-color:var(--btn);margin:0}
 .progress{height:6px;background:var(--line);border-radius:3px;overflow:hidden}
@@ -413,7 +415,8 @@ function drawMap(o, sums){
           : s.anyOpen ? "GoWild seats hidden by your filters" : "no GoWild seats"}`;
     m.bindTooltip(tip, {className:"plain"});
     m.on("click", () => select(s.code));
-    if(isOpen) L.marker([st.lat, st.lon], {icon: L.divIcon({className:"", html:`<span class="pricetag${sel ? " sel" : ""}">${s.code} $${Math.round(s.min)}</span>`, iconAnchor:[-8, 22]}), interactive:false, zIndexOffset: sel ? 10000 : 0}).addTo(layer);
+    if(isOpen) L.marker([st.lat, st.lon], {icon: L.divIcon({className:"", html:`<span class="pricetag${sel ? " sel" : ""}">${s.code} $${Math.round(s.min)}</span>`, iconAnchor:[-8, 22]}), zIndexOffset: sel ? 10000 : 0})
+      .on("click", () => select(s.code)).addTo(layer);
   }
   L.circleMarker([o.lat, o.lon], {radius:9, color:"#4ade80", weight:3, fillColor:"#ffffff", fillOpacity:1}).bindTooltip(`<b>${esc(o.label)}</b>`, {className:"plain"}).addTo(layer);
   if(!state.fitFor || state.fitFor !== state.origin){ map.fitBounds(pts, {padding:[40,40], maxZoom:6}); state.fitFor = state.origin; }
@@ -434,6 +437,10 @@ function closeDetail(){
   redrawMap();
   $("#stat").scrollIntoView({block:"nearest"});
 }
+// Esc goes back to all destinations (checks the panel, which can still be open after the date or airport changes)
+document.addEventListener("keydown", e => {
+  if(e.key === "Escape" && $("#detail").style.display === "block") closeDetail();
+});
 
 function flightRows(flights, closed, o, d, day){
   const nonstopOnly = $("#nonstop").checked;
@@ -467,7 +474,7 @@ async function showDetail(code){
   const o = state.origin, day = state.day;
   const r = state.results.results[code];
   const nextDays = state.meta.days.filter(d => d.date >= day).slice(0, 3);
-  let h = `<button class="ghost" onclick="closeDetail()">← All destinations</button>
+  let h = `<button class="ghost" onclick="closeDetail()" aria-keyshortcuts="Escape">← All destinations <kbd>esc</kbd></button>
     <h2>${esc(state.stations[o].city)} → ${esc(st.label)}</h2>
     <div class="note">${fmtDay(day)}${r ? " · checked " + fmtStamp(r.checked_at) : ""} · <a href="${frontierUrl(o, code, day)}" target="_blank" rel="noopener">Open on Frontier ↗</a></div>`;
   if(!r) h += `<div class="section note">Not checked yet. <button class="ghost" onclick="scanOne('${o}','${code}','${day}')">Check this route</button></div>`;
