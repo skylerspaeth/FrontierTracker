@@ -47,7 +47,8 @@ button.primary:hover:not(:disabled){background:var(--btn-hover)}
 button.primary:disabled{opacity:.6;cursor:default}
 button.ghost{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:inherit;cursor:pointer;color:var(--ink)}
 button.ghost:hover{background:#2a2a2d}
-kbd{display:inline-block;margin-left:6px;padding:1px 5px;border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;background:var(--panel);color:var(--muted);font:600 11px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace}
+button.back{display:inline-flex;align-items:center;gap:10px}
+kbd{padding:1px 5px;border:1px solid #505056;border-bottom-width:2px;border-radius:4px;background:var(--panel);color:var(--muted);font:600 11px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace}
 @media (hover:none) and (pointer:coarse){ kbd{display:none} }  /* touch screens: no Esc key to hint at */
 .toggle{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted);cursor:pointer;user-select:none}
 .toggle input[type=checkbox]{accent-color:var(--btn);margin:0}
@@ -474,7 +475,7 @@ async function showDetail(code){
   const o = state.origin, day = state.day;
   const r = state.results.results[code];
   const nextDays = state.meta.days.filter(d => d.date >= day).slice(0, 3);
-  let h = `<button class="ghost" onclick="closeDetail()" aria-keyshortcuts="Escape">← All destinations <kbd>esc</kbd></button>
+  let h = `<button class="ghost back" onclick="closeDetail()" aria-keyshortcuts="Escape">← All destinations <kbd>esc</kbd></button>
     <h2>${esc(state.stations[o].city)} → ${esc(st.label)}</h2>
     <div class="note">${fmtDay(day)}${r ? " · checked " + fmtStamp(r.checked_at) : ""} · <a href="${frontierUrl(o, code, day)}" target="_blank" rel="noopener">Open on Frontier ↗</a></div>`;
   if(!r) h += `<div class="section note">Not checked yet. <button class="ghost" onclick="scanOne('${o}','${code}','${day}')">Check this route</button></div>`;
